@@ -1,5 +1,5 @@
 # from random import randint # TODO should the transform sample the midi sequence at random?
-from miditok import REMI, TokenizerConfig, TokSequence
+from miditok import REMI, TSD, MIDILike, TokenizerConfig, TokSequence
 from random import randint
 import torch
 
@@ -20,7 +20,21 @@ TOKENIZER_PARAMS = {
 class MidiTokenizer(object):
     def __init__(self, tokenizer_params: dict, max_tracks: int = 1) -> None:
         self.config = TokenizerConfig(**tokenizer_params)
-        self.tokenizer = REMI(self.config)  # TODO handle other tokenizers
+        match tokenizer_params.get("tokenization", "remi"):
+            case "remi":
+                self.tokenizer = REMI(self.config)
+            case "remiplus":
+                self.config.use_programs = True
+                self.config.one_token_stream_for_programs = True
+                self.config.use_time_signatures = True
+                self.tokenizer = REMI(self.config)
+            case "tsd":
+                self.tokenizer = TSD(self.config)
+            case "midilike":
+                self.tokenizer = MIDILike(self.config)
+            case _:
+                raise Exception(f"Unknown tokenization '{tokenizer_params.get('tokenization')}'")
+                
         self.max_tracks = max_tracks
 
     def __call__(self, path: str):
