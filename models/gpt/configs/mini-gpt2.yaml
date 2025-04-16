@@ -1,5 +1,8 @@
 model:
   model_type: gpt2
+  output_transforms:
+    - folk_rnn_inv:
+    - abc_midi:
   params:
     n_vocab: 137 # vocabulary size
     n_ctx: 1955 # context size

@@ -1,5 +1,8 @@
 model:
   model_type: folk-rnn
+  output_transforms:
+    - folk_rnn_inv:
+    - abc_midi:
   params:
     vocab_size: 137
     num_layers: 3

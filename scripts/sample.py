@@ -5,8 +5,7 @@ from omegaconf import OmegaConf
 from pathlib import Path
 
 from models import get_model
-from data.tokenizers import FolkTokenizer
-from data.converters.abc_to_midi_converter import ABCTOMidiConverter
+from data.transforms import get_transform
 
 
 if __name__ == "__main__":
@@ -24,6 +23,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
     config_path = str(args.path)
     checkpoint_path = str(args.checkpoint) if args.checkpoint is not None else None
+    assert checkpoint_path != None # silence LSP error
+
     batch_size = args.batch
     out_path = args.out
 
@@ -31,22 +32,22 @@ if __name__ == "__main__":
 
     model_type = get_model(config.model.get("model_type"))
     model = model_type.load_from_checkpoint(checkpoint_path, **config.model.get("params", dict()))
+
+    transforms = OmegaConf.to_object(config.model["output_transforms"])
+    assert isinstance(transforms, list)
+    model.output_transform = get_transform(transforms)
+
     if torch.cuda.is_available():
         model.to(torch.device("cuda"))
 
     model.eval()
-    samples = model.sample(batch_size)
-
-    # TODO handle other tokenizers. Maybe read the what tokenizer should be used from config somehow. Otherwise, if
-    # getting tokenizer type from config file is ugly then either add argument to argparser, or even add the
-    # converter to config file. Or maybe do something else entirely, I dunno.
-    tokenizer = FolkTokenizer()
-    converter = ABCTOMidiConverter(tokenizer)
+    midi_contents = model.sample_midi(batch_size)
 
     if not os.path.exists(out_path):
         os.makedirs(out_path)
-    for i, sample in enumerate(samples):
+    for i, sample in enumerate(midi_contents):
         try:
-            converter(sample.cpu(), os.path.join(out_path, f"sample_{i}.mid"))
+            with open(os.path.join(out_path, f"sample_{i}.mid"), "wb") as f:
+                f.write(sample)
         except Exception:
             print(f"Invalid format of sample {i}")
