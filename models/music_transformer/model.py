@@ -38,31 +38,17 @@ class Conv1D(nn.Module):
         x = x.view(*size_out)
         return x
     
-
-# class MLP(nn.Module):
-#     def __init__(self, n_state, n_embd):
-#         super(MLP, self).__init__()
-#         nx = n_embd
-#         self.c_fc = Conv1D(n_state, nx)
-#         self.c_proj = Conv1D(nx, n_state)
-#         self.act = gelu
-
-#     def forward(self, x):
-#         h = self.act(self.c_fc(x))
-#         h2 = self.c_proj(h)
-#         return h2
-
 class MLP(nn.Module):
     def __init__(self, n_state, n_embd):
         super(MLP, self).__init__()
-        # Zamiast Conv1D używamy Linear
-        self.c_fc = nn.Linear(n_embd, n_state)  # Warstwa liniowa z n_embd do n_state
-        self.c_proj = nn.Linear(n_state, n_embd)  # Warstwa liniowa z n_state do n_embd
-        self.act = gelu  # Funkcja aktywacji GELU
+        
+        self.c_fc = nn.Linear(n_embd, n_state)  
+        self.c_proj = nn.Linear(n_state, n_embd)  
+        self.act = gelu  
 
     def forward(self, x):
-        h = self.act(self.c_fc(x))  # Przesyłamy przez liniową i funkcję aktywacji
-        h2 = self.c_proj(h)  # Kolejna warstwa liniowa
+        h = self.act(self.c_fc(x)) 
+        h2 = self.c_proj(h)  
         return h2
 
 
@@ -84,65 +70,57 @@ class Block(nn.Module):
 
 class MultiheadAttention(nn.Module):
     def __init__(self, nx, n_ctx, n_head, scale=False):
-        super(MultiheadAttention, self).__init__()
+        super().__init__()
         self.n_head = n_head
         self.n_ctx = n_ctx
-        self.split_size = nx
         self.scale = scale
         self.head_dim = nx // n_head
-        assert self.head_dim * n_head == nx
+        self.split_size = nx
 
-        # QKV projection
         self.c_attn = Conv1D(3 * nx, nx)
         self.c_proj = Conv1D(nx, nx)
 
-        # Relatywne pozycje: [n_ctx, head_dim]
-        self.relative_positions = nn.Embedding(n_ctx, self.head_dim)
+        # Relatywne pozycje
+        self.relative_positions = nn.Embedding(2 * n_ctx - 1, self.head_dim)
 
-        # Causal mask
         self.register_buffer("bias", torch.tril(torch.ones(n_ctx, n_ctx)).view(1, 1, n_ctx, n_ctx))
 
     def split_heads(self, x, is_key=False):
-        # x: [B, T, C] → [B, H, T, D]
         B, T, C = x.size()
         x = x.view(B, T, self.n_head, C // self.n_head)
         if is_key:
-            return x.permute(0, 2, 3, 1)  # [B, H, D, T]
+            return x.permute(0, 2, 3, 1) 
         else:
-            return x.permute(0, 2, 1, 3)  # [B, H, T, D]
+            return x.permute(0, 2, 1, 3)
 
     def merge_heads(self, x):
-        # x: [B, H, T, D] → [B, T, H*D]
         B, H, T, D = x.size()
         return x.permute(0, 2, 1, 3).contiguous().view(B, T, H * D)
 
-    def _attn(self, q, k, v):
-        # q: [B, H, T, D]
-        # k: [B, H, D, T]
-        # v: [B, H, T, D]
+    def _rel_shift(self, x):
+        B, H, T, _ = x.size()
+        x = F.pad(x, (1, 0))  
+        x = x.view(B, H, -1, T)  
+        x = x[:, :, 1:, :]  
+        return x
+
+    def _attn(self, q, k, v, rel_pos_emb):
         B, H, T, D = q.size()
+        content_scores = torch.matmul(q, k) 
 
-        # Content-based attention (standard QK^T)
-        content_scores = torch.matmul(q, k)  # [B, H, T, T]
-
-        # Relative positional attention
-        positions = torch.arange(T, dtype=torch.long, device=q.device)
-        rel_pos_emb = self.relative_positions(positions)  # [T, D]
-        rel_pos_emb = rel_pos_emb.transpose(0, 1)  # [D, T]
-        rel_scores = torch.matmul(q, rel_pos_emb.unsqueeze(0).unsqueeze(0))  # [B, H, T, T]
-
-        # Combine
+        rel_scores = torch.matmul(q, rel_pos_emb.transpose(2, 3)) 
+        rel_scores = self._rel_shift(rel_scores)
+        print(f"content_scores: {content_scores.shape}, rel_scores: {rel_scores.shape}")
         scores = content_scores + rel_scores
 
         if self.scale:
             scores = scores / torch.sqrt(torch.tensor(D, dtype=torch.float32, device=scores.device))
 
-        # Causal mask
-        causal_mask = self.bias[:, :, -T:, :T]  # [1, 1, T, T]
+        causal_mask = self.bias[:, :, -T:, :T]
         scores = scores.masked_fill(causal_mask == 0, float('-inf'))
 
         weights = F.softmax(scores, dim=-1)
-        output = torch.matmul(weights, v)  # [B, H, T, D]
+        output = torch.matmul(weights, v)
         return output
 
     def forward(self, x, layer_past=None, attn_mask=None):
@@ -156,12 +134,17 @@ class MultiheadAttention(nn.Module):
 
         if layer_past is not None:
             past_k, past_v = layer_past
-            k = torch.cat((past_k, k), dim=-1)  # [B, H, D, T_total]
-            v = torch.cat((past_v, v), dim=-2)  # [B, H, T_total, D]
+            k = torch.cat((past_k, k), dim=-1)
+            v = torch.cat((past_v, v), dim=-2)
 
         present = (k, v)
 
-        attn_output = self._attn(q, k, v)
+        rel_range = torch.arange(2 * T - 1, device=x.device)
+        rel_pos_emb = self.relative_positions(rel_range)  # [2T - 1, D]
+        rel_pos_emb = rel_pos_emb.unsqueeze(0).unsqueeze(0).expand(q.size(0), q.size(1), -1, -1)  # [B, H, 2T-1, D]
+
+
+        attn_output = self._attn(q, k, v, rel_pos_emb)
         attn_output = self.merge_heads(attn_output)
         attn_output = self.c_proj(attn_output)
 
@@ -193,7 +176,6 @@ class MusicTransformer(BaseModel):
         self.lr_decay = lr_decay
         self.lr_decay_start = lr_decay_start
 
-        self.wpe = nn.Embedding(self.n_ctx, self.n_embd)
         self.wte = nn.Embedding(self.n_vocab, self.n_embd)
         block = Block(self.n_ctx, self.n_embd, self.n_head, scale=True)
         self.h = nn.ModuleList([copy.deepcopy(block) for _ in range(self.n_layer)])
@@ -229,11 +211,8 @@ class MusicTransformer(BaseModel):
         position_ids = position_ids.view(-1, position_ids.size(-1))
 
         input_embeds = self.wte(input_ids)
-        position_embeds = self.wpe(position_ids)
+        hidden_states = input_embeds
 
-        token_type_embeds = 0
-
-        hidden_states = input_embeds + position_embeds + token_type_embeds
 
         presents = []
         for block, layer_past in zip(self.h, past):
