@@ -1,11 +1,11 @@
 model:
-  model_type: gpt2
+  model_type: music-transformer
   params:
-    n_vocab: 137 # vocabulary size
-    n_ctx: 1955 # context size
-    n_embd: 600 # embedding size #768 600
-    n_head: 12 # number of attention heads
-    n_layer: 12 # number of layers in the model
+    n_vocab: 137 # wielkość słownika tokenów
+    n_ctx: 1955 # maksymalna długość sekwencji (konkretne zależne od danych)
+    n_embd: 600 # wymiar wektora osadzeń
+    n_head: 12 # liczba głów uwagi
+    n_layer: 12 # liczba bloków transformerowych
     lr: 0.002
     lr_decay: 0.97
     lr_decay_start: 20
@@ -44,9 +44,6 @@ lightning:
     benchmark: True
     max_epochs: 150
     accumulate_grad_batches: 128
-    # gradient_clip_algorithm: "value"
-    # gradient_clip_val: 5
-    # accelerator: "cpu"
 
 callbacks:
   - model_checkpoint:
@@ -58,4 +55,3 @@ callbacks:
       prefix: "N-Step-Checkpoint"
       use_modelcheckpoint_filename: False
   - setup_callback:
-  - cuda_callback:

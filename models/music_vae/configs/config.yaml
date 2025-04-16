@@ -29,18 +29,19 @@ dataloaders:
     transforms:
       - midi_tokenizer:
           tokenizer_params:
+            tokenization: "midilike"
             pitch_range: [0, 127]
-            vocab_size: 130  # Total vocab size: 130 for pitches, note-off, rest + 512 for drum patterns
-            max_bar_length: 16  # Each bar has 16 events (16th notes)
-            num_bars: 16  # Total number of bars for hierarchical model
-            hierarchical: True  # Use hierarchical modeling
-            bar_token_count: 16  # Each subsequence corresponds to a single bar
-            beat_resolution: 4  # 16th note intervals (4 intervals per beat in 4/4 time)
-            note_on_count: 128  # 128 note-on tokens
+            vocab_size: 130 # Total vocab size: 130 for pitches, note-off, rest + 512 for drum patterns
+            max_bar_length: 16 # Each bar has 16 events (16th notes)
+            num_bars: 16 # Total number of bars for hierarchical model
+            hierarchical: True # Use hierarchical modeling
+            bar_token_count: 16 # Each subsequence corresponds to a single bar
+            beat_resolution: 4 # 16th note intervals (4 intervals per beat in 4/4 time)
+            note_on_count: 128 # 128 note-on tokens
       - sample_subsequence:
           subsequence_len: 256
       - toksequence_to_tensor:
-    
+
     batch_size: 128
     num_workers: 16
     collate_fn: "pad_collate_single_sequence"
@@ -54,18 +55,19 @@ dataloaders:
         transforms:
           - midi_tokenizer:
               tokenizer_params:
+                tokenization: "midilike"
                 pitch_range: [0, 127]
-                vocab_size: 130  # Total vocab size: 130 for pitches, note-off, rest + 512 for drum patterns
-                max_bar_length: 16  # Each bar has 16 events (16th notes)
-                num_bars: 16  # Total number of bars for hierarchical model
-                hierarchical: True  # Use hierarchical modeling
-                bar_token_count: 16  # Each subsequence corresponds to a single bar
-                beat_resolution: 4  # 16th note intervals (4 intervals per beat in 4/4 time)
-                note_on_count: 128  # 128 note-on tokens
+                vocab_size: 130 # Total vocab size: 130 for pitches, note-off, rest + 512 for drum patterns
+                max_bar_length: 16 # Each bar has 16 events (16th notes)
+                num_bars: 16 # Total number of bars for hierarchical model
+                hierarchical: True # Use hierarchical modeling
+                bar_token_count: 16 # Each subsequence corresponds to a single bar
+                beat_resolution: 4 # 16th note intervals (4 intervals per beat in 4/4 time)
+                note_on_count: 128 # 128 note-on tokens
           - sample_subsequence:
               subsequence_len: 256
           - toksequence_to_tensor:
-        
+
         batch_size: 128
         num_workers: 16
         collate_fn: "pad_collate_single_sequence"
