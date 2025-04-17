@@ -1,0 +1,100 @@
+model:
+  model_type: museGAN
+  params:
+    latent_dim: 128
+    num_tracks: 4
+    num_bars: 8
+    num_steps_per_bar: 16
+    num_pitches: 84
+    generator_lr: 0.0002
+    discriminator_lr: 0.0002
+    lr_decay: 0.97
+    lr_decay_start: 20
+
+
+dataloaders:
+  validation:
+    name: "folk-rnn"
+    root: "_data"
+    split: "test"
+    download: True
+    data_type: "tokenized_ABC"
+    transforms:
+      - folk_rnn:
+
+    batch_size: 16
+    num_workers: 4
+    collate_fn: "pad_collate_single_sequence"
+
+
+  dataloaders:
+  validation:
+    name: "lakh"
+    root: "_data"
+    split: "test"
+    download: True
+    transforms:
+      - midi_tokenizer:
+          tokenizer_params:
+            pitch_range: [0, 127]
+            vocab_size: 130  # Total vocab size: 130 for pitches, note-off, rest + 512 for drum patterns
+            max_bar_length: 16  # Each bar has 16 events (16th notes)
+            num_bars: 16  # Total number of bars for hierarchical model
+            hierarchical: True  # Use hierarchical modeling
+            bar_token_count: 16  # Each subsequence corresponds to a single bar
+            beat_resolution: 4  # 16th note intervals (4 intervals per beat in 4/4 time)
+            note_on_count: 128  # 128 note-on tokens
+      - sample_subsequence:
+          subsequence_len: 256
+      - toksequence_to_tensor:
+    
+    batch_size: 128
+    num_workers: 16
+    collate_fn: "pad_collate_single_sequence"
+
+  train:
+    - dataset:
+        name: "lakh"
+        root: "_data"
+        split: "train"
+        download: True
+        transforms:
+          - midi_tokenizer:
+              tokenizer_params:
+                pitch_range: [0, 127]
+                vocab_size: 130  # Total vocab size: 130 for pitches, note-off, rest + 512 for drum patterns
+                max_bar_length: 16  # Each bar has 16 events (16th notes)
+                num_bars: 16  # Total number of bars for hierarchical model
+                hierarchical: True  # Use hierarchical modeling
+                bar_token_count: 16  # Each subsequence corresponds to a single bar
+                beat_resolution: 4  # 16th note intervals (4 intervals per beat in 4/4 time)
+                note_on_count: 128  # 128 note-on tokens
+          - sample_subsequence:
+              subsequence_len: 256
+          - toksequence_to_tensor:
+        
+        batch_size: 128
+        num_workers: 16
+        collate_fn: "pad_collate_single_sequence"
+
+
+lightning:
+  trainer:
+    max_epochs: 100
+    gpus: 1
+    precision: 16
+    log_every_n_steps: 50
+    checkpoint_callback: true
+
+
+callbacks:
+  - model_checkpoint:
+      filename: "{epoch:06}"
+      verbose: True
+      save_last: True
+  - checkpoint_every_n_steps:
+      save_step_frequency: 1000
+      prefix: "N-Step-Checkpoint"
+      use_modelcheckpoint_filename: False
+  - setup_callback:
+  - cuda_callback:

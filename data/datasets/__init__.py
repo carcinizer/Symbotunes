@@ -10,5 +10,7 @@ def get_dataset(name: str, config: dict) -> BaseDataset:
             return FolkRnnDataset(**config)
         case "lakh":
             return LakhMidiDataset(**config)
+        case "museGAN":
+            return LakhMidiDataset(**config)
         case _:
             raise NotImplementedError()
