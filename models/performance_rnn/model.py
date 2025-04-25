@@ -14,43 +14,94 @@ class PerformanceRNN(BaseModel):
 
     def __init__(
         self,
-        event_dim: int,
-        control_dim: int,
-        init_dim: int,
-        hidden_dim: int,
-        layers: int = 3,
-        dropout: float = 0.3,
+        num_layers: int,
+        lstm_size: int,
+        vocab_size: int,
+        dropout: float,
         *args,
         **kwargs
     ) -> None:
         super.__init__(*args, **kwargs)
         
-        self.event_dim = event_dim,
-        self.control_dim = control_dim
-        self.init_dim = init_dim
-        self.hidden_dim = hidden_dim
-        self.layers = layers
+        self.lstm_size = lstm_size
+        self.vocab_size = vocab_size
+        self.num_layers = num_layers
         self.dropout = dropout
 
-        self.gru = nn.GRU()
-        
-    def forward(self, x: torch.Tensor, lengths: torch.Tensor) -> torch.Tensor:
+        # If one-hot encoding is used, initialize weights as an identity matrix
+        self.weights_emb = nn.Parameter(torch.eye(vocab_size, dtype=torch.float32))
+        weights_emb = torch.eye(vocab_size, dtype=torch.float32)
+        self.embedding = nn.Embedding.from_pretrained(weights_emb, freeze=True)
 
+        self.lstm = nn.LSTM(
+            input_size=vocab_size,
+            hidden_size=lstm_size,
+            num_layers=num_layers,
+            batch_first=True,
+            dropout=dropout,
+            bidirectional=False
+        )
+        
+        self.out = nn.Linear(in_features=lstm_size, out_features=vocab_size)
+    
+
+    def forward(self, x: torch.Tensor, lengths: torch.Tensor) -> torch.Tensor:
+        emb = self.embedding(x)
+        emb_packed = pack_padded_sequence(emb, lengths, enforce_sorted=False, )
+        hidden = torch.zeros((self.num_layers, x.shape[0], self.lstm_size), device=self.device)
+        state = torch.zeros((self.num_layers, x.shape[0], self.lstm_size), device=self.device)
+        out = self.lstm(emb_packed, (hidden, state))
+        out, _ = pad_packed_sequence(out, batch_first=True, total_length=x.shape[1])
+        out = self.out(out)
+        return F.softmax(out)
     
 
     def _step(self, batch) -> torch.Tensor:
-        pass
+        x, lengths = batch
+        y = x[:, 1:]
+        mask = (torch.arange(x.shape[1], device=self.device).unsqueeze(0) < lengths.unsqueeze(1)).float()
+        out = self(x, lengths.cpu())
+        corresponding_outs = out.gather(dim=2, index = y.unsqueeze(-1)).squeeze(-1)
+        log_probs = torch.log(corresponding_outs)
+        loss = -torch.mean(torch.sum(log_probs * mask[:, :-1], dim=1), dim=0)
+        return loss
 
     def training_step(self, batch, batch_idx):
-        pass
+        loss = self._step(batch)
+        lr = self.optimizers().param_groups[0]["lr"]
+        self.log("lr_abs", lr, prog_bar=True, logger=True, on_step=True, on_epoch=False)
+        self.log("train/loss", loss, prog_bar=True, logger=True, on_step=True, on_epoch=False)
+        return loss
 
     def validation_step(self, batch, batch_idx):
-        pass
+        loss = self._step(batch)
+        self.log("val/loss", loss, prog_bar=True, logger=True, on_step=True, on_epoch=False)
+        return loss
 
     def configure_optimizers(self):
-        pass
+        optimizer = RMSprop(params=self.parameters(), lr=self.lr)
+        scheduler = LambdaLR(
+            optimizer,
+            lr_lambda = lambda epoch: (1 if epoch < self.lr_decay_start else self.lr_decal ** (epoch - self.lr_decay_start))
+        )
+        return {'optimizer': optimizer, 'lr_scheduler': scheduler}
 
     @torch.no_grad()
-    def sample(self, batch_size: int) -> list[torch.Tensor]:
-        pass
+    def sample(self, batch_size: int, temperature: float = 1.0) -> list[torch.Tensor]:
+        self.train()
+        batch = torch.tensor([[self.start_token] for _ in range(batch_size)], device = self.device)
+        lengths = torch.tensor([1 for _ in range(batch_size)], device=torch.device("cpu"))
+        samples: list[torch.Tensor] = []
+        while batch.shape[0] > 0:
+            # TODO chwila, tutaj chyba nie mamy end tokenów
+            # TODO ponadto: temperatura
+            out = self(batch, lengths)
+            next_tokens = out[:, -1].argmax(dim=1).unsqueeze(1)
+            batch = torch.concat(tensors=(batch, next_tokens), dim=1)
+            ended = batch[:, -1] == self.end_token
+            samples += [sample for sample in batch[ended]]
+            batch = batch[~ended]
+            lengths = lengths[~ended.cpu()]
+            lengths += 1
+        return samples
 
