@@ -5,11 +5,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from ..base import BaseModel
 
-
-def gelu(x):
-    return 0.5 * x * (1 + torch.tanh(np.sqrt(2 / np.pi) * (x + 0.044715 * torch.pow(x, 3))))
-
-
 class Norm(nn.Module):
     def __init__(self, n_state, epsilon=1e-5):
         super(Norm, self).__init__()
@@ -44,13 +39,12 @@ class MLP(nn.Module):
         
         self.c_fc = nn.Linear(n_embd, n_state)  
         self.c_proj = nn.Linear(n_state, n_embd)  
-        self.act = gelu  
+        self.act = nn.GELU()  
 
     def forward(self, x):
         h = self.act(self.c_fc(x)) 
         h2 = self.c_proj(h)  
         return h2
-
 
 class Block(nn.Module):
     def __init__(self, n_ctx, n_embd, n_head, scale=False):
@@ -67,7 +61,6 @@ class Block(nn.Module):
         m = self.mlp(self.ln_2(x))
         x = x + m
         return x, present
-
 class MultiheadAttention(nn.Module):
     def __init__(self, nx, n_ctx, n_head, scale=False):
         super().__init__()
@@ -79,8 +72,6 @@ class MultiheadAttention(nn.Module):
 
         self.c_attn = Conv1D(3 * nx, nx)
         self.c_proj = Conv1D(nx, nx)
-
-        # Relatywne pozycje
         self.relative_positions = nn.Embedding(2 * n_ctx - 1, self.head_dim)
 
         self.register_buffer("bias", torch.tril(torch.ones(n_ctx, n_ctx)).view(1, 1, n_ctx, n_ctx))
@@ -98,11 +89,18 @@ class MultiheadAttention(nn.Module):
         return x.permute(0, 2, 1, 3).contiguous().view(B, T, H * D)
 
     def _rel_shift(self, x):
+        """
+        Przesunięcie tensora relacyjnego w celu dopasowania do układu przy relatywnych pozycjach.
+        Zakładany wejściowy kształt: [B, H, T, 2T - 1]
+        Wyjściowy kształt: [B, H, T, T]
+        """
         B, H, T, _ = x.size()
-        x = F.pad(x, (1, 0))  
-        x = x.view(B, H, -1, T)  
-        x = x[:, :, 1:, :]  
+        x = F.pad(x, (1, 0))  # [B, H, T, 2T]
+        x = x.view(B, H, -1, T)  # [B, H, 2T, T]
+        x = x[:, :, 1:, :]  # [B, H, 2T - 1, T]
+        x = x[:, :, :T, :]  # Przycinamy do [B, H, T, T]
         return x
+
 
     def _attn(self, q, k, v, rel_pos_emb):
         B, H, T, D = q.size()
@@ -110,7 +108,6 @@ class MultiheadAttention(nn.Module):
 
         rel_scores = torch.matmul(q, rel_pos_emb.transpose(2, 3)) 
         rel_scores = self._rel_shift(rel_scores)
-        print(f"content_scores: {content_scores.shape}, rel_scores: {rel_scores.shape}")
         scores = content_scores + rel_scores
 
         if self.scale:
