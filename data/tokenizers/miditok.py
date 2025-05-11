@@ -34,11 +34,12 @@ class MidiTokTokenizer(object):
                 self.tokenizer = MIDILike(self.config)
             case _:
                 raise Exception(f"Unknown tokenization '{tokenizer_params.get('tokenization')}'")
-                
+
         self.max_tracks = max_tracks
 
-    def __call__(self, data: str):
-        tokenized_midi = self.tokenizer(data)[: self.max_tracks]
+    def __call__(self, data: bytes):
+        score = symusic.Score.from_midi(data)
+        tokenized_midi = self.tokenizer(score)[: self.max_tracks]
         return tokenized_midi[0] if len(tokenized_midi) == 1 else tokenized_midi
 
     def inverse_transform(self, data: TokSequence) -> bytes:

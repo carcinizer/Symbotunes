@@ -27,7 +27,7 @@ class ABCTOMidiConverter:
         midi.close()
         return out
 
-    def __call__(self, notes: list[str]):
+    def __call__(self, notes: list[str]) -> bytes:
         assert notes[0][0] == "M"
         assert notes[1][0] == "K"
 

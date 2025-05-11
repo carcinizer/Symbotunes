@@ -1,14 +1,23 @@
 model:
   model_type: performance-rnn
   output_transforms:
-    - folk_rnn_inv:
-    - abc_midi:
+    - tensor_to_toksequence:
+    - midi_tokenizer_inv:
+        tokenizer_params:
+          tokenization: midilike
+          pitch_range: [0, 127]
+          vocab_size: 413 
+          special_tokens: []
+          max_duration:  [1, 125, 125] # num_beats, num_frames, res_frames
+          note_on_count: 128
+          note_off_count: 128
+          num_velocities: 32
   params:
     vocab_size: 413
     num_layers: 3
     lstm_size: 512
-    #dropout: 0.5
-    embedding_size: null
+    dropout: 0.0
+    #embedding_size: null
     lr: 0.001
     #lr_decay: 0.97
     #lr_decay_start: 20
@@ -20,21 +29,24 @@ dataloaders:
     split: "test"
     download: True
     transforms:
+      - load_midi:
+      - force_tempo:
+          bpm: 60
+          tpq: 1000
+      - augment_timestretch:
+          magnitudes: [0.95, 0.975, 1, 1.025, 1.05] # [..., 0.9, 1.1]
+      - augment_transpose:
+          half_steps: [-4, 0, 4] # [-5,-4,-3,-2,-1,0,1,2,3,4,5,6]
       - midi_tokenizer:
           tokenizer_params:
             tokenization: midilike
             pitch_range: [0, 127]
             vocab_size: 413 
-            max_duration: 
-            #max_bar_length: 16  # Each bar has 16 events (16th notes)
-            #num_bars: 16  # Total number of bars for hierarchical model
-            #hierarchical: True  # Use hierarchical modeling
-            #bar_token_count: 16  # Each subsequence corresponds to a single bar
-            #beat_resolution: 4  # 16th note intervals (4 intervals per beat in 4/4 time)
+            special_tokens: []
+            max_duration:  [1, 125, 125] # num_beats, num_frames, res_frames
             note_on_count: 128
             note_off_count: 128
             num_velocities: 32
-            num_bars: 
 
       - sample_subsequence:
           subsequence_len: 256
@@ -51,9 +63,25 @@ dataloaders:
         split: "train"
         download: True
         transforms:
+          - load_midi:
+          - force_tempo:
+              bpm: 60
+              tpq: 1000
+          - augment_timestretch:
+              magnitudes: [0.95, 0.975, 1, 1.025, 1.05] # [..., 0.9, 1.1]
+          - augment_transpose:
+              half_steps: [-4, 0, 4] # [-5,-4,-3,-2,-1,0,1,2,3,4,5,6]
           - midi_tokenizer:
               tokenizer_params:
-                TODO: todo
+                tokenization: midilike
+                pitch_range: [0, 127]
+                vocab_size: 413 
+                special_tokens: []
+                max_duration:  [1, 125, 125] # num_beats, num_frames, res_frames
+                note_on_count: 128
+                note_off_count: 128
+                num_velocities: 32
+
           - sample_subsequence:
               subsequence_len: 256
           - toksequence_to_tensor:

@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import pytorch_lightning as pl
-from torch.optim import RMSprop
+from torch.optim import SGD
 from torch.optim.lr_scheduler import LambdaLR
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
@@ -18,15 +18,21 @@ class PerformanceRNN(BaseModel):
         lstm_size: int,
         vocab_size: int,
         dropout: float,
+        lr: float = 0.001,
+        lr_decay_start: int = 0,
+        lr_decay: float = 1.0,
         *args,
         **kwargs
     ) -> None:
-        super.__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         
         self.lstm_size = lstm_size
         self.vocab_size = vocab_size
         self.num_layers = num_layers
         self.dropout = dropout
+        self.lr = lr
+        self.lr_decay_start = lr_decay_start
+        self.lr_decay = lr_decay
 
         # If one-hot encoding is used, initialize weights as an identity matrix
         self.weights_emb = nn.Parameter(torch.eye(vocab_size, dtype=torch.float32))
@@ -79,10 +85,10 @@ class PerformanceRNN(BaseModel):
         return loss
 
     def configure_optimizers(self):
-        optimizer = RMSprop(params=self.parameters(), lr=self.lr)
+        optimizer = SGD(params=self.parameters(), lr=self.lr)
         scheduler = LambdaLR(
             optimizer,
-            lr_lambda = lambda epoch: (1 if epoch < self.lr_decay_start else self.lr_decal ** (epoch - self.lr_decay_start))
+            lr_lambda = lambda epoch: (1 if epoch < self.lr_decay_start else self.lr_decay ** (epoch - self.lr_decay_start))
         )
         return {'optimizer': optimizer, 'lr_scheduler': scheduler}
 
