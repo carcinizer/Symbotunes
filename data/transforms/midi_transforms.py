@@ -49,7 +49,9 @@ class ForceTempo:
 
     def __call__(self, data: bytes) -> bytes:
         score_sec = symusic.Score.from_midi(data, ttype="tick")
-        assert len(score_sec.tracks) > 0
+        if len(score_sec.tracks) == 0:
+            return data # Empty file, TODO remove empty files in Lakh dataset
+
         sec_notes = sorted(score_sec.tracks[0].notes.copy(), key=lambda x: x.start)
 
         score_tick = symusic.Score(ttype="second")

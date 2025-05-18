@@ -1,5 +1,5 @@
 
-from music21 import converter
+from music21 import converter, exceptions21
 from music21.midi.translate import music21ObjectToMidiFile
 from io import BytesIO
 from random import choice
@@ -11,12 +11,16 @@ class RandomTranspose:
         self.half_steps = half_steps
 
     def __call__(self, data: bytes) -> bytes:
-        stream = converter.parse(data, format="midi")
+        try:
+            stream = converter.parse(data, format="midi")
+        except exceptions21.StreamException: # Empty stream
+            return data
         io = BytesIO()
         half_steps = choice(self.half_steps)
         stream.transpose(half_steps)
 
         midi = music21ObjectToMidiFile(stream)
+            
         midi.openFileLike(io)
         midi.write()
         out = io.getvalue()
@@ -32,11 +36,10 @@ class RandomTimestretch:
         score_sec = symusic.Score.from_midi(data, ttype="second")
         mag = choice(self.magnitudes)
 
-        assert len(score_sec.tracks) == 1
-
-        for note in score_sec.tracks[0].notes:
-            note.start *= mag
-            note.duration *= mag
+        for track in score_sec.tracks:
+            for note in track.notes:
+                note.start *= mag
+                note.duration *= mag
 
         return score_sec.dumps_midi()
 
