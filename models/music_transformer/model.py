@@ -20,7 +20,7 @@ class MLP(nn.Module):
         super(MLP, self).__init__()
         
         self.c_fc = nn.Linear(n_embd, 4*n_embd)
-        self.act = nn.ReLU() 
+        self.act = nn.GELU() 
         self.c_proj = nn.Linear(4*n_embd, n_embd)
 
     def forward(self, x):
@@ -52,78 +52,85 @@ class MultiheadAttention(nn.Module):
         self.head_dim = nx // n_head
         self.split_size = nx
 
-        self.c_attn = nn.Linear(3 * nx, nx)
+        self.c_attn = nn.Linear(nx, 3 * nx)
         self.c_proj = nn.Linear(nx, nx)
-        self.relative_positions = nn.Embedding(2 * n_ctx - 1, self.head_dim)
+
+        self.rel_pos_emb = nn.Embedding(2 * n_ctx - 1, self.head_dim)
+
+        # Biasy wg Shaw et al. (Transformer-XL)
+        self.u = nn.Parameter(torch.Tensor(self.n_head, self.head_dim))
+        self.v = nn.Parameter(torch.Tensor(self.n_head, self.head_dim))
 
         self.register_buffer("bias", torch.tril(torch.ones(n_ctx, n_ctx)).view(1, 1, n_ctx, n_ctx))
+        self._reset_parameters()
+
+    def _reset_parameters(self):
+        nn.init.normal_(self.u, std=0.02)
+        nn.init.normal_(self.v, std=0.02)
 
     def split_heads(self, x, is_key=False):
         B, T, C = x.size()
         x = x.view(B, T, self.n_head, C // self.n_head)
         if is_key:
-            return x.permute(0, 2, 3, 1) 
+            return x.permute(0, 2, 3, 1)  # (B, H, D, T)
         else:
-            return x.permute(0, 2, 1, 3)
+            return x.permute(0, 2, 1, 3)  # (B, H, T, D)
 
     def merge_heads(self, x):
         B, H, T, D = x.size()
         return x.permute(0, 2, 1, 3).contiguous().view(B, T, H * D)
 
-    def _rel_shift(self, x):
-        """
-        Przesunięcie tensora relacyjnego w celu dopasowania do układu przy relatywnych pozycjach.
-        Zakładany wejściowy kształt: [B, H, T, 2T - 1]
-        Wyjściowy kształt: [B, H, T, T]
-        """
+    def _skew(self, x):
         B, H, T, _ = x.size()
-        x = F.pad(x, (1, 0))  # [B, H, T, 2T]
-        x = x.view(B, H, -1, T)  # [B, H, 2T, T]
-        x = x[:, :, 1:, :]  # [B, H, 2T - 1, T]
-        x = x[:, :, :T, :]  # Przycinamy do [B, H, T, T]
-        return x
+        x_padded = F.pad(x, (1, 0))                # [B, H, T, 2T]
+        x_padded = x_padded.view(B, H, -1, T)      # [B, H, 2T, T]
+        return x_padded[:, :, T - 1:T - 1 + T]     # [B, H, T, T]
 
-
-    def _attn(self, q, k, v, rel_pos_emb):
-        B, H, T, D = q.size()
-        content_scores = torch.matmul(q, k) 
-
-        rel_scores = torch.matmul(q, rel_pos_emb.transpose(2, 3)) 
-        rel_scores = self._rel_shift(rel_scores)
-        scores = content_scores + rel_scores
-
-        if self.scale:
-            scores = scores / torch.sqrt(torch.tensor(D, dtype=torch.float32, device=scores.device))
-
-        causal_mask = self.bias[:, :, -T:, :T]
-        scores = scores.masked_fill(causal_mask == 0, float('-inf'))
-
-        weights = F.softmax(scores, dim=-1)
-        output = torch.matmul(weights, v)
-        return output
 
     def forward(self, x, layer_past=None, attn_mask=None):
         B, T, C = x.size()
 
-        x = self.c_attn(x)
-        q, k, v = x.split(self.split_size, dim=2)
-        q = self.split_heads(q)
-        k = self.split_heads(k, is_key=True)
-        v = self.split_heads(v)
+        x = self.c_attn(x)  # (B, T, 3*C)
+        q, k, v = x.split(C, dim=2)
+
+        q = self.split_heads(q)  # (B, H, T, D)
+        k = self.split_heads(k, is_key=True)  # (B, H, D, T)
+        v = self.split_heads(v)  # (B, H, T, D)
 
         if layer_past is not None:
             past_k, past_v = layer_past
             k = torch.cat((past_k, k), dim=-1)
-            v = torch.cat((past_v, v), dim=-2)
+            v = torch.cat((past_v, v), dim=2)
 
         present = (k, v)
 
-        rel_range = torch.arange(2 * T - 1, device=x.device)
-        rel_pos_emb = self.relative_positions(rel_range)  # [2T - 1, D]
-        rel_pos_emb = rel_pos_emb.unsqueeze(0).unsqueeze(0).expand(q.size(0), q.size(1), -1, -1)  # [B, H, 2T-1, D]
+        # Relatywna pozycja (2T - 1)
+        rel_emb = self.rel_pos_emb(torch.arange(2 * T - 1, device=x.device))  # [2T - 1, D]
+        rel_emb = rel_emb.view(2 * T - 1, self.head_dim).unsqueeze(0).unsqueeze(0)  # [1, 1, 2T-1, D]
 
+        # Składowe attention
+        AC = torch.matmul(q + self.u.unsqueeze(0).unsqueeze(2), k)  # [B, H, T, T]
+        BD = torch.matmul(q + self.v.unsqueeze(0).unsqueeze(2), rel_emb.transpose(-2, -1))  # [B, H, T, 2T-1]
+        BD = self._skew(BD)[:, :, :, :T]  # [B, H, T, T]
+        scores = AC + BD
 
-        attn_output = self._attn(q, k, v, rel_pos_emb)
+        if self.scale:
+            scores = scores / self.head_dim ** 0.5
+
+        if attn_mask is not None:
+            scores = scores + attn_mask  # Zakładamy maskę w stylu [-inf, 0]
+
+        # Causal mask (jeśli brak `attn_mask`)
+        else:
+            scores = scores.masked_fill(self.bias[:, :, -T:, :T] == 0, float('-inf'))
+
+        attn_weights = F.softmax(scores, dim=-1)
+        attn_output = torch.matmul(attn_weights, v)  # (B, H, T, D)
+
+        # Dodanie relatywnego komponentu wartości (Shaw et al. rel_v)
+        v_rel = torch.matmul(attn_weights, rel_emb[:, :, T-1:])  # (B, H, T, D)
+        attn_output = attn_output + v_rel
+
         attn_output = self.merge_heads(attn_output)
         attn_output = self.c_proj(attn_output)
 
@@ -142,6 +149,7 @@ class MusicTransformer(BaseModel):
         lr_decay_start: int = 20,
         start_token: int = 135,
         end_token: int = 136,
+        temperature: float = 1.0,
         *args,
         **kwargs
     ) -> None:
@@ -154,6 +162,7 @@ class MusicTransformer(BaseModel):
         self.lr = lr
         self.lr_decay = lr_decay
         self.lr_decay_start = lr_decay_start
+        self.temperature = temperature
 
         self.wte = nn.Embedding(self.n_vocab, self.n_embd)
         block = Block(self.n_ctx, self.n_embd, self.n_head, scale=True)
@@ -236,15 +245,18 @@ class MusicTransformer(BaseModel):
 
     @torch.no_grad()
     def sample(self, batch_size: int) -> list[torch.Tensor]:
+        self.eval()
         batch = torch.tensor([[self.start_token] for _ in range(batch_size)], device=self.device)
         samples: list[torch.Tensor] = []
-        while batch.shape[0] > 0:
+        while batch.shape[0] > 0 and batch.shape[1] < self.n_ctx:
             out, _ = self(batch)
-            probabilities = torch.softmax(out[:, -1], dim=-1)
-            distributions = torch.distributions.categorical.Categorical(probabilities)
-            next_tokens = distributions.sample().unsqueeze(1)
+            logits = out[:, -1] / self.temperature
+            probs = torch.softmax(logits, dim=-1)
+            next_tokens = torch.multinomial(probs, num_samples=1)
+
             batch = torch.concat(tensors=(batch, next_tokens), dim=1)
             ended = batch[:, -1] == self.end_token
             samples += [sample for sample in batch[ended]]
             batch = batch[~ended]
+        self.train()
         return samples
