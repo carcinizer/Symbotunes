@@ -55,11 +55,13 @@ class MultiheadAttention(nn.Module):
         self.c_attn = nn.Linear(nx, 3 * nx)
         self.c_proj = nn.Linear(nx, nx)
 
-        self.rel_pos_emb = nn.Embedding(2 * n_ctx - 1, self.head_dim)
+        self.rel_k_emb = nn.Embedding(2 * n_ctx - 1, self.head_dim)
+        self.rel_v_emb = nn.Embedding(n_ctx, self.head_dim)
 
-        # Biasy wg Shaw et al. (Transformer-XL)
-        self.u = nn.Parameter(torch.Tensor(self.n_head, self.head_dim))
-        self.v = nn.Parameter(torch.Tensor(self.n_head, self.head_dim))
+        self.u = nn.Parameter(torch.Tensor(n_head, self.head_dim))
+        self.v = nn.Parameter(torch.Tensor(n_head, self.head_dim))
+
+        self.rel_v_proj = nn.Linear(self.head_dim, self.head_dim)
 
         self.register_buffer("bias", torch.tril(torch.ones(n_ctx, n_ctx)).view(1, 1, n_ctx, n_ctx))
         self._reset_parameters()
@@ -86,7 +88,6 @@ class MultiheadAttention(nn.Module):
         x_padded = x_padded.view(B, H, -1, T)      # [B, H, 2T, T]
         return x_padded[:, :, T - 1:T - 1 + T]     # [B, H, T, T]
 
-
     def forward(self, x, layer_past=None, attn_mask=None):
         B, T, C = x.size()
 
@@ -104,31 +105,30 @@ class MultiheadAttention(nn.Module):
 
         present = (k, v)
 
-        # Relatywna pozycja (2T - 1)
-        rel_emb = self.rel_pos_emb(torch.arange(2 * T - 1, device=x.device))  # [2T - 1, D]
-        rel_emb = rel_emb.view(2 * T - 1, self.head_dim).unsqueeze(0).unsqueeze(0)  # [1, 1, 2T-1, D]
+        rel_k = self.rel_k_emb(torch.arange(2 * T - 1, device=x.device))  # [2T-1, D]
+        rel_k = rel_k.view(2 * T - 1, self.head_dim).unsqueeze(0).unsqueeze(0)  # [1,1,2T-1,D]
 
-        # Składowe attention
-        AC = torch.matmul(q + self.u.unsqueeze(0).unsqueeze(2), k)  # [B, H, T, T]
-        BD = torch.matmul(q + self.v.unsqueeze(0).unsqueeze(2), rel_emb.transpose(-2, -1))  # [B, H, T, 2T-1]
-        BD = self._skew(BD)[:, :, :, :T]  # [B, H, T, T]
+        rel_v = self.rel_v_emb(torch.arange(T, device=x.device))  # [T, D]
+        rel_v = self.rel_v_proj(rel_v)  # [T, D]
+        rel_v = rel_v.unsqueeze(0).unsqueeze(0)  # [1,1,T,D]
+
+        AC = torch.matmul(q + self.u.unsqueeze(0).unsqueeze(2), k)  # (B, H, T, T_k)
+        BD = torch.matmul(q + self.v.unsqueeze(0).unsqueeze(2), rel_k.transpose(-2, -1))  # (B, H, T, 2T-1)
+        BD = self._skew(BD)[:, :, :, :T]  # (B, H, T, T)
         scores = AC + BD
 
         if self.scale:
             scores = scores / self.head_dim ** 0.5
 
         if attn_mask is not None:
-            scores = scores + attn_mask  # Zakładamy maskę w stylu [-inf, 0]
-
-        # Causal mask (jeśli brak `attn_mask`)
+            scores = scores + attn_mask
         else:
             scores = scores.masked_fill(self.bias[:, :, -T:, :T] == 0, float('-inf'))
 
         attn_weights = F.softmax(scores, dim=-1)
-        attn_output = torch.matmul(attn_weights, v)  # (B, H, T, D)
 
-        # Dodanie relatywnego komponentu wartości (Shaw et al. rel_v)
-        v_rel = torch.matmul(attn_weights, rel_emb[:, :, T-1:])  # (B, H, T, D)
+        attn_output = torch.matmul(attn_weights, v)  # (B, H, T, D)
+        v_rel = torch.matmul(attn_weights, rel_v)  # (B, H, T, D)
         attn_output = attn_output + v_rel
 
         attn_output = self.merge_heads(attn_output)
