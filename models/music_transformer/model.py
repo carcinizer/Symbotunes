@@ -44,31 +44,28 @@ class Block(nn.Module):
         return x, present
     
 class MultiheadAttention(nn.Module):
-    def __init__(self, nx, n_ctx, n_head, scale=False):
+    def __init__(self, nx, n_ctx, n_head, scale=True, causal=True, dropout_rate=0.1):
         super().__init__()
         self.n_head = n_head
         self.n_ctx = n_ctx
         self.scale = scale
+        self.causal = causal
         self.head_dim = nx // n_head
-        self.split_size = nx
 
         self.c_attn = nn.Linear(nx, 3 * nx)
         self.c_proj = nn.Linear(nx, nx)
 
         self.rel_k_emb = nn.Embedding(2 * n_ctx - 1, self.head_dim)
         self.rel_v_emb = nn.Embedding(n_ctx, self.head_dim)
-
-        self.u = nn.Parameter(torch.Tensor(n_head, self.head_dim))
-        self.v = nn.Parameter(torch.Tensor(n_head, self.head_dim))
-
         self.rel_v_proj = nn.Linear(self.head_dim, self.head_dim)
+        
+        self.attn_dropout = nn.Dropout(p=dropout_rate)
 
-        self.register_buffer("bias", torch.tril(torch.ones(n_ctx, n_ctx)).view(1, 1, n_ctx, n_ctx))
         self._reset_parameters()
 
     def _reset_parameters(self):
-        nn.init.normal_(self.u, std=0.02)
-        nn.init.normal_(self.v, std=0.02)
+        nn.init.normal_(self.rel_k_emb.weight, std=0.02)
+        nn.init.normal_(self.rel_v_emb.weight, std=0.02)
 
     def split_heads(self, x, is_key=False):
         B, T, C = x.size()
@@ -106,35 +103,44 @@ class MultiheadAttention(nn.Module):
         present = (k, v)
 
         rel_k = self.rel_k_emb(torch.arange(2 * T - 1, device=x.device))  # [2T-1, D]
-        rel_k = rel_k.view(2 * T - 1, self.head_dim).unsqueeze(0).unsqueeze(0)  # [1,1,2T-1,D]
+        rel_k = rel_k.view(2 * T - 1, self.head_dim).unsqueeze(0).unsqueeze(0)  # [1, 1, 2T-1, D]
 
         rel_v = self.rel_v_emb(torch.arange(T, device=x.device))  # [T, D]
-        rel_v = self.rel_v_proj(rel_v)  # [T, D]
-        rel_v = rel_v.unsqueeze(0).unsqueeze(0)  # [1,1,T,D]
+        rel_v = self.rel_v_proj(rel_v).unsqueeze(0).unsqueeze(0)  # [1, 1, T, D]
 
-        AC = torch.matmul(q + self.u.unsqueeze(0).unsqueeze(2), k)  # (B, H, T, T_k)
-        BD = torch.matmul(q + self.v.unsqueeze(0).unsqueeze(2), rel_k.transpose(-2, -1))  # (B, H, T, 2T-1)
+        # Attention scores
+        AC = torch.matmul(q, k)  # (B, H, T, T)
+        BD = torch.matmul(q, rel_k.transpose(-2, -1))  # (B, H, T, 2T-1)
         BD = self._skew(BD)[:, :, :, :T]  # (B, H, T, T)
         scores = AC + BD
 
         if self.scale:
             scores = scores / self.head_dim ** 0.5
 
+        # Causal masking
+        if self.causal:
+            causal_mask = torch.triu(
+                torch.ones((T, T), device=x.device), diagonal=1
+            ).bool()  # Upper triangular (excluding diagonal)
+            scores = scores.masked_fill(causal_mask.unsqueeze(0).unsqueeze(0), float('-inf'))
+
+        # Optional padding mask
         if attn_mask is not None:
             scores = scores + attn_mask
-        else:
-            scores = scores.masked_fill(self.bias[:, :, -T:, :T] == 0, float('-inf'))
 
         attn_weights = F.softmax(scores, dim=-1)
+        attn_weights = self.attn_dropout(attn_weights)
+
 
         attn_output = torch.matmul(attn_weights, v)  # (B, H, T, D)
-        v_rel = torch.matmul(attn_weights, rel_v)  # (B, H, T, D)
+        v_rel = torch.matmul(attn_weights, rel_v)    # (B, H, T, D)
         attn_output = attn_output + v_rel
 
         attn_output = self.merge_heads(attn_output)
         attn_output = self.c_proj(attn_output)
 
         return attn_output, present
+
 
 class MusicTransformer(BaseModel):
     def __init__(
