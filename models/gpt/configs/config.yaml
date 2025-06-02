@@ -61,4 +61,4 @@ callbacks:
       prefix: "N-Step-Checkpoint"
       use_modelcheckpoint_filename: False
   - setup_callback:
-  - cuda_callback:
+  # - cuda_callback:

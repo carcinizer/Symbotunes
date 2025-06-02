@@ -5,41 +5,23 @@ import torch.nn as nn
 import torch.nn.functional as F
 from ..base import BaseModel
 
+
 class Norm(nn.Module):
     def __init__(self, n_state, epsilon=1e-5):
         super(Norm, self).__init__()
         self.epsilon = epsilon
-        self.g = nn.Parameter(torch.ones(n_state))
-        self.b = nn.Parameter(torch.zeros(n_state))
+        self.layer_norm = nn.LayerNorm(n_state, eps=epsilon)
 
     def forward(self, x):
-        u = x.mean(-1, keepdim=True)
-        s = (x - u).pow(2).mean(-1, keepdim=True)
-        x = (x - u) / torch.sqrt(s + self.epsilon)
-        return x * self.g + self.b
-
-class Conv1D(nn.Module):
-    def __init__(self, nf, nx):
-        super(Conv1D, self).__init__()
-        self.nf = nf
-        w = torch.empty(nx, nf)
-        nn.init.normal_(w, std=0.02)
-        self.w = nn.Parameter(w)
-        self.b = nn.Parameter(torch.zeros(nf))
-
-    def forward(self, x):
-        size_out = x.size()[:-1] + (self.nf,)
-        x = torch.addmm(self.b, x.view(-1, x.size(-1)), self.w)
-        x = x.view(*size_out)
-        return x
+        return self.layer_norm(x)
     
 class MLP(nn.Module):
-    def __init__(self, n_state, n_embd):
+    def __init__(self, n_embd):
         super(MLP, self).__init__()
         
-        self.c_fc = nn.Linear(n_embd, n_state)  
-        self.c_proj = nn.Linear(n_state, n_embd)  
-        self.act = nn.GELU()  
+        self.c_fc = nn.Linear(n_embd, 4*n_embd)
+        self.act = nn.ReLU() 
+        self.c_proj = nn.Linear(4*n_embd, n_embd)
 
     def forward(self, x):
         h = self.act(self.c_fc(x)) 
@@ -49,11 +31,10 @@ class MLP(nn.Module):
 class Block(nn.Module):
     def __init__(self, n_ctx, n_embd, n_head, scale=False):
         super(Block, self).__init__()
-        nx = n_embd
-        self.attn = MultiheadAttention(nx, n_ctx, n_head, scale)
-        self.ln_1 = Norm(nx)
-        self.mlp = MLP(4 * nx, n_embd)
-        self.ln_2 = Norm(nx)
+        self.attn = MultiheadAttention(n_embd, n_ctx, n_head, scale)
+        self.ln_1 = Norm(n_embd)
+        self.mlp = MLP(n_embd)
+        self.ln_2 = Norm(n_embd)
 
     def forward(self, x, layer_past=None, attn_mask=None):
         a, present = self.attn(self.ln_1(x), layer_past, attn_mask)
@@ -61,6 +42,7 @@ class Block(nn.Module):
         m = self.mlp(self.ln_2(x))
         x = x + m
         return x, present
+    
 class MultiheadAttention(nn.Module):
     def __init__(self, nx, n_ctx, n_head, scale=False):
         super().__init__()
@@ -70,8 +52,8 @@ class MultiheadAttention(nn.Module):
         self.head_dim = nx // n_head
         self.split_size = nx
 
-        self.c_attn = Conv1D(3 * nx, nx)
-        self.c_proj = Conv1D(nx, nx)
+        self.c_attn = nn.Linear(3 * nx, nx)
+        self.c_proj = nn.Linear(nx, nx)
         self.relative_positions = nn.Embedding(2 * n_ctx - 1, self.head_dim)
 
         self.register_buffer("bias", torch.tril(torch.ones(n_ctx, n_ctx)).view(1, 1, n_ctx, n_ctx))
@@ -209,8 +191,7 @@ class MusicTransformer(BaseModel):
 
         input_embeds = self.wte(input_ids)
         hidden_states = input_embeds
-
-
+        
         presents = []
         for block, layer_past in zip(self.h, past):
             hidden_states, present = block(hidden_states, layer_past)
