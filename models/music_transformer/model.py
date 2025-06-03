@@ -16,24 +16,24 @@ class Norm(nn.Module):
         return self.layer_norm(x)
     
 class MLP(nn.Module):
-    def __init__(self, n_embd):
+    def __init__(self, n_embd, dropout_rate=0.1):
         super(MLP, self).__init__()
-        
-        self.c_fc = nn.Linear(n_embd, 4*n_embd)
-        self.act = nn.GELU() 
-        self.c_proj = nn.Linear(4*n_embd, n_embd)
+        self.c_fc = nn.Linear(n_embd, 4 * n_embd)
+        self.act = nn.GELU()
+        self.c_proj = nn.Linear(4 * n_embd, n_embd)
+        self.dropout = nn.Dropout(p=dropout_rate)
 
     def forward(self, x):
-        h = self.act(self.c_fc(x)) 
-        h2 = self.c_proj(h)  
+        h = self.act(self.c_fc(x))
+        h2 = self.dropout(self.c_proj(h))
         return h2
 
 class Block(nn.Module):
-    def __init__(self, n_ctx, n_embd, n_head, scale=False):
+    def __init__(self, n_ctx, n_embd, n_head, scale=False, dropout_rate=0.1):
         super(Block, self).__init__()
-        self.attn = MultiheadAttention(n_embd, n_ctx, n_head, scale)
+        self.attn = MultiheadAttention(n_embd, n_ctx, n_head, scale, dropout_rate=dropout_rate)
         self.ln_1 = Norm(n_embd)
-        self.mlp = MLP(n_embd)
+        self.mlp = MLP(n_embd, dropout_rate=dropout_rate)
         self.ln_2 = Norm(n_embd)
 
     def forward(self, x, layer_past=None, attn_mask=None):
@@ -44,7 +44,7 @@ class Block(nn.Module):
         return x, present
     
 class MultiheadAttention(nn.Module):
-    def __init__(self, nx, n_ctx, n_head, scale=True, causal=True, dropout_rate=0.1):
+    def __init__(self, nx, n_ctx, n_head, scale=True, dropout_rate=0.1, causal=True):
         super().__init__()
         self.n_head = n_head
         self.n_ctx = n_ctx
@@ -58,6 +58,11 @@ class MultiheadAttention(nn.Module):
         self.rel_k_emb = nn.Embedding(2 * n_ctx - 1, self.head_dim)
         self.rel_v_emb = nn.Embedding(n_ctx, self.head_dim)
         self.rel_v_proj = nn.Linear(self.head_dim, self.head_dim)
+        
+        self.u = nn.Parameter(torch.Tensor(self.n_head, self.head_dim))
+        self.v = nn.Parameter(torch.Tensor(self.n_head, self.head_dim))
+        nn.init.normal_(self.u, std=0.02)
+        nn.init.normal_(self.v, std=0.02)
         
         self.attn_dropout = nn.Dropout(p=dropout_rate)
 
@@ -84,16 +89,51 @@ class MultiheadAttention(nn.Module):
         x_padded = F.pad(x, (1, 0))                # [B, H, T, 2T]
         x_padded = x_padded.view(B, H, -1, T)      # [B, H, 2T, T]
         return x_padded[:, :, T - 1:T - 1 + T]     # [B, H, T, T]
-
-    def forward(self, x, layer_past=None, attn_mask=None):
+    
+    def compute_qkv(self, x):
         B, T, C = x.size()
-
         x = self.c_attn(x)  # (B, T, 3*C)
         q, k, v = x.split(C, dim=2)
-
-        q = self.split_heads(q)  # (B, H, T, D)
+        q = self.split_heads(q)         # (B, H, T, D)
         k = self.split_heads(k, is_key=True)  # (B, H, D, T)
-        v = self.split_heads(v)  # (B, H, T, D)
+        v = self.split_heads(v)         # (B, H, T, D)
+        return q, k, v
+    
+    def compute_relative_embeddings(self, T, device):
+        rel_k = self.rel_k_emb(torch.arange(2 * T - 1, device=device))
+        rel_k = rel_k.unsqueeze(0).unsqueeze(0)  # (1, 1, 2T-1, D)
+
+        rel_v = self.rel_v_emb(torch.arange(T, device=device))
+        rel_v = self.rel_v_proj(rel_v).unsqueeze(0).unsqueeze(0)  # (1, 1, T, D)
+
+        return rel_k, rel_v
+    
+    def compute_attention_scores(self, q, k, rel_k):
+        AC = torch.matmul(q + self.u.unsqueeze(0).unsqueeze(2), k)  # (B, H, T, T)
+        BD = torch.matmul(q + self.v.unsqueeze(0).unsqueeze(2), rel_k.transpose(-2, -1))  # (B, H, T, 2T-1)
+        BD = self._skew(BD)[:, :, :, :AC.size(-1)]  # (B, H, T, T)
+        return AC + BD
+    
+    def apply_mask_and_softmax(self, scores, attn_mask):
+        T = scores.size(-1)
+
+        if self.causal:
+            causal_mask = torch.triu(torch.ones((T, T), device=scores.device), diagonal=1).bool()
+            scores = scores.masked_fill(causal_mask.unsqueeze(0).unsqueeze(0), float('-inf'))
+
+        if attn_mask is not None:
+            scores = scores + attn_mask
+
+        if self.scale:
+            scores = scores / (self.head_dim ** 0.5)
+
+        attn_weights = F.softmax(scores, dim=-1)
+        return self.attn_dropout(attn_weights)
+
+
+    def forward(self, x, layer_past=None, attn_mask=None):
+        _, T, _ = x.size()
+        q, k, v = self.compute_qkv(x)
 
         if layer_past is not None:
             past_k, past_v = layer_past
@@ -102,44 +142,19 @@ class MultiheadAttention(nn.Module):
 
         present = (k, v)
 
-        rel_k = self.rel_k_emb(torch.arange(2 * T - 1, device=x.device))  # [2T-1, D]
-        rel_k = rel_k.view(2 * T - 1, self.head_dim).unsqueeze(0).unsqueeze(0)  # [1, 1, 2T-1, D]
+        rel_k, rel_v = self.compute_relative_embeddings(T, x.device)
+        scores = self.compute_attention_scores(q, k, rel_k)
+        attn_weights = self.apply_mask_and_softmax(scores, attn_mask)
 
-        rel_v = self.rel_v_emb(torch.arange(T, device=x.device))  # [T, D]
-        rel_v = self.rel_v_proj(rel_v).unsqueeze(0).unsqueeze(0)  # [1, 1, T, D]
-
-        # Attention scores
-        AC = torch.matmul(q, k)  # (B, H, T, T)
-        BD = torch.matmul(q, rel_k.transpose(-2, -1))  # (B, H, T, 2T-1)
-        BD = self._skew(BD)[:, :, :, :T]  # (B, H, T, T)
-        scores = AC + BD
-
-        if self.scale:
-            scores = scores / self.head_dim ** 0.5
-
-        # Causal masking
-        if self.causal:
-            causal_mask = torch.triu(
-                torch.ones((T, T), device=x.device), diagonal=1
-            ).bool()  # Upper triangular (excluding diagonal)
-            scores = scores.masked_fill(causal_mask.unsqueeze(0).unsqueeze(0), float('-inf'))
-
-        # Optional padding mask
-        if attn_mask is not None:
-            scores = scores + attn_mask
-
-        attn_weights = F.softmax(scores, dim=-1)
-        attn_weights = self.attn_dropout(attn_weights)
-
-
-        attn_output = torch.matmul(attn_weights, v)  # (B, H, T, D)
-        v_rel = torch.matmul(attn_weights, rel_v)    # (B, H, T, D)
+        attn_output = torch.matmul(attn_weights, v)
+        v_rel = torch.matmul(attn_weights, rel_v)
         attn_output = attn_output + v_rel
 
         attn_output = self.merge_heads(attn_output)
         attn_output = self.c_proj(attn_output)
 
         return attn_output, present
+
 
 
 class MusicTransformer(BaseModel):
@@ -169,14 +184,16 @@ class MusicTransformer(BaseModel):
         self.lr_decay = lr_decay
         self.lr_decay_start = lr_decay_start
         self.temperature = temperature
+        self.drop = nn.Dropout(p=0.1)
+        block = Block(self.n_ctx, self.n_embd, self.n_head, scale=True, dropout_rate=0.1)
+
 
         self.wte = nn.Embedding(self.n_vocab, self.n_embd)
-        block = Block(self.n_ctx, self.n_embd, self.n_head, scale=True)
         self.h = nn.ModuleList([copy.deepcopy(block) for _ in range(self.n_layer)])
         self.ln_f = Norm(self.n_embd)
-        n_hidden = 2 * n_vocab
-        self.ll = nn.Linear(n_embd, n_hidden)
-        self.ll2 = nn.Linear(n_hidden, n_vocab)
+        self.output_proj = nn.Linear(n_embd, n_vocab, bias=False)
+        self.output_proj.weight = self.wte.weight
+
 
         self.start_token = start_token
         self.end_token = end_token
@@ -186,25 +203,15 @@ class MusicTransformer(BaseModel):
         self.decoder = nn.Linear(embed_shape[1], embed_shape[0], bias=False)
         self.decoder.weight = model_embeddings_weights
 
-    def forward(self, input_ids, position_ids=None, past=None):
+    def forward(self, input_ids, past=None):
 
         if past is None:
-            past_length = 0
             past = [None] * len(self.h)
-        else:
-            past_length = past[0][0].size(-2)
-
-        if position_ids is None:
-            position_ids = torch.arange(
-                past_length, input_ids.size(-1) + past_length, dtype=torch.long, device=input_ids.device
-            )
-            position_ids = position_ids.unsqueeze(0).expand_as(input_ids)
 
         input_shape = input_ids.size()
         input_ids = input_ids.view(-1, input_ids.size(-1))
-        position_ids = position_ids.view(-1, position_ids.size(-1))
 
-        input_embeds = self.wte(input_ids)
+        input_embeds = self.drop(self.wte(input_ids))
         hidden_states = input_embeds
         
         presents = []
@@ -215,9 +222,8 @@ class MusicTransformer(BaseModel):
         hidden_states = self.ln_f(hidden_states)
         output_shape = input_shape + (hidden_states.size(-1),)
         hidden_states = hidden_states.view(*output_shape)
+        out = self.output_proj(hidden_states)
 
-        out = F.leaky_relu(self.ll(hidden_states))
-        out = self.ll2(out)
 
         return out, presents
 
@@ -254,7 +260,9 @@ class MusicTransformer(BaseModel):
         self.eval()
         batch = torch.tensor([[self.start_token] for _ in range(batch_size)], device=self.device)
         samples: list[torch.Tensor] = []
-        while batch.shape[0] > 0 and batch.shape[1] < self.n_ctx:
+        steps = 0
+        while batch.shape[0] > 0 and batch.shape[1] < self.n_ctx and steps < self.n_ctx:
+            steps += 1
             out, _ = self(batch)
             logits = out[:, -1] / self.temperature
             probs = torch.softmax(logits, dim=-1)
