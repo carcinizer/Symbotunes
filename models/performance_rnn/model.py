@@ -22,6 +22,7 @@ class PerformanceRNN(BaseModel):
         lr_decay_start: int = 0,
         lr_decay: float = 1.0,
         num_tokens_per_sample: int = 500, # TODO constant time samples
+        output_transforms = [],
         *args,
         **kwargs
     ) -> None:
@@ -35,6 +36,7 @@ class PerformanceRNN(BaseModel):
         self.lr_decay_start = lr_decay_start
         self.lr_decay = lr_decay
         self.num_tokens_per_sample = num_tokens_per_sample
+        self.output_transforms = output_transforms
 
         # If one-hot encoding is used, initialize weights as an identity matrix
         self.weights_emb = nn.Parameter(torch.eye(vocab_size, dtype=torch.float32))
@@ -97,19 +99,19 @@ class PerformanceRNN(BaseModel):
     @torch.no_grad()
     def sample(self, batch_size: int, temperature: float = 1.0) -> list[torch.Tensor]:
         self.train()
-        batch = torch.tensor([[self.start_token] for _ in range(batch_size)], device = self.device)
-        lengths = torch.tensor([1 for _ in range(batch_size)], device=torch.device("cpu"))
+        batch = torch.tensor([[] for _ in range(batch_size)], device=self.device)
+        #batch = torch.randn(batch_size).to(self.device)
+        lengths = torch.tensor([0 for _ in range(batch_size)], device=torch.device("cpu"))
         samples: list[torch.Tensor] = []
         for i in range(self.num_tokens_per_sample // batch_size):
-            # TODO chwila, tutaj chyba nie mamy end tokenów
             out = self(batch, lengths)
             next_tokens = (out[:, -1] / temperature).softmax(dim=-1)
             next_tokens = torch.multinomial(next_tokens, num_samples=1)
             batch = torch.concat(tensors=(batch, next_tokens), dim=1)
-            ended = batch[:, -1] == self.end_token
-            samples += [sample for sample in batch[ended]]
-            batch = batch[~ended]
-            lengths = lengths[~ended.cpu()]
+            #ended = batch[:, -1] == self.end_token
+            samples += [sample for sample in batch]#[sample for sample in batch[ended]]
+            #batch = batch[~ended]
+            #lengths = lengths[~ended.cpu()]
             lengths += 1
         return samples
 

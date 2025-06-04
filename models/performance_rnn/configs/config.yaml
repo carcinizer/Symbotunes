@@ -108,3 +108,7 @@ callbacks:
       use_modelcheckpoint_filename: False
   - setup_callback:
   - cuda_callback:
+  - frechet_music_distance:
+      every_n_epochs: 5
+      batch_size: 64
+      dataset_path: "_data/train/lmd_full/"

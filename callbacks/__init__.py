@@ -5,6 +5,7 @@ from .cuda_callback import CUDACallback
 from .pl_callbacks import get_pl_callback
 from .setup_callback import SetupCallback
 from .model_checkpoint import ModelCheckpointAdjusted
+from .fmd_callback import FrechetMusicDistanceCallback
 
 
 def _get_callback(common: dict, name: str, kwargs: dict | None) -> Callback:
@@ -18,6 +19,8 @@ def _get_callback(common: dict, name: str, kwargs: dict | None) -> Callback:
             return SetupCallback(**kwargs, **common)
         case "model_checkpoint":
             return ModelCheckpointAdjusted(**kwargs, **common)
+        case "frechet_music_distance":
+            return FrechetMusicDistanceCallback(**kwargs, **common)
         case _:
             return get_pl_callback(name, kwargs)
 
