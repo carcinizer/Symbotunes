@@ -19,13 +19,7 @@ dataloaders:
     split: "test"
     download: True
     transforms:
-      - pianoroll_transformer:
-          params:
-            beat_resolution: 4
-            lowest_pitch: 24
-            n_pitches: 84
-            n_tracks: 5
-            use_binary: true
+      - folk_rnn:
     batch_size: 64
     num_workers: 4
     collate_fn: "default_collate"
