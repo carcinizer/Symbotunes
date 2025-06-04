@@ -58,3 +58,5 @@ callbacks:
       use_modelcheckpoint_filename: False
   - setup_callback:
   - cuda_callback:
+  - frechet_music_distance:
+      every_n_epochs: 5

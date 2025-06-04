@@ -7,6 +7,7 @@ from pathlib import Path
 import datetime
 
 from data import get_dataloaders
+from data.transforms import get_transform
 from models import get_model
 from callbacks import get_callbacks
 
@@ -43,6 +44,10 @@ if __name__ == "__main__":
         model = model_type.load_from_checkpoint(checkpoint_path, **config.model.get("params", dict()))
     else:
         model = model_type(**config.model.get("params", dict()))
+
+    transforms = OmegaConf.to_object(config.model["output_transforms"])
+    assert isinstance(transforms, list)
+    model.output_transform = get_transform(transforms)
 
     now = datetime.datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
     nowname = model.__class__.__name__ + "_" + now
