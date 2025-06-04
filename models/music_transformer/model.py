@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from ..base import BaseModel
-
+from typing import Optional, Tuple
 
 class Norm(nn.Module):
     def __init__(self, n_state, epsilon=1e-5):
@@ -91,7 +91,7 @@ class MultiheadAttention(nn.Module):
         return x_padded[:, :, T - 1:T - 1 + T]     # [B, H, T, T]
     
     def compute_qkv(self, x):
-        B, T, C = x.size()
+        _, _, C = x.size()
         x = self.c_attn(x)  # (B, T, 3*C)
         q, k, v = x.split(C, dim=2)
         q = self.split_heads(q)         # (B, H, T, D)
@@ -130,7 +130,6 @@ class MultiheadAttention(nn.Module):
         attn_weights = F.softmax(scores, dim=-1)
         return self.attn_dropout(attn_weights)
 
-
     def forward(self, x, layer_past=None, attn_mask=None):
         _, T, _ = x.size()
         q, k, v = self.compute_qkv(x)
@@ -154,8 +153,6 @@ class MultiheadAttention(nn.Module):
         attn_output = self.c_proj(attn_output)
 
         return attn_output, present
-
-
 
 class MusicTransformer(BaseModel):
     def __init__(
@@ -187,24 +184,16 @@ class MusicTransformer(BaseModel):
         self.drop = nn.Dropout(p=0.1)
         block = Block(self.n_ctx, self.n_embd, self.n_head, scale=True, dropout_rate=0.1)
 
-
         self.wte = nn.Embedding(self.n_vocab, self.n_embd)
         self.h = nn.ModuleList([copy.deepcopy(block) for _ in range(self.n_layer)])
         self.ln_f = Norm(self.n_embd)
         self.output_proj = nn.Linear(n_embd, n_vocab, bias=False)
         self.output_proj.weight = self.wte.weight
 
-
         self.start_token = start_token
         self.end_token = end_token
-
-    def set_embeddings_weights(self, model_embeddings_weights):
-        embed_shape = model_embeddings_weights.shape
-        self.decoder = nn.Linear(embed_shape[1], embed_shape[0], bias=False)
-        self.decoder.weight = model_embeddings_weights
-
+        
     def forward(self, input_ids, past=None):
-
         if past is None:
             past = [None] * len(self.h)
 
@@ -223,8 +212,6 @@ class MusicTransformer(BaseModel):
         output_shape = input_shape + (hidden_states.size(-1),)
         hidden_states = hidden_states.view(*output_shape)
         out = self.output_proj(hidden_states)
-
-
         return out, presents
 
     def _step(self, batch) -> torch.Tensor:
@@ -253,24 +240,54 @@ class MusicTransformer(BaseModel):
         return loss
 
     def configure_optimizers(self):
-        return torch.optim.Adam(self.parameters(), lr=1e-4)
+        optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
+
+        def lr_lambda(step):
+            if step < self.lr_decay_start:
+                return step / max(1, self.lr_decay_start)
+            else:
+                return self.lr_decay ** (step - self.lr_decay_start)
+
+        scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
+        
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": scheduler,
+                "interval": "step",
+                "frequency": 1,
+            }
+        }
 
     @torch.no_grad()
     def sample(self, batch_size: int) -> list[torch.Tensor]:
         self.eval()
-        batch = torch.tensor([[self.start_token] for _ in range(batch_size)], device=self.device)
+        device = self.device
+        batch = torch.tensor([[self.start_token]] * batch_size, device=device)
         samples: list[torch.Tensor] = []
+        past: list[Optional[Tuple[torch.Tensor, torch.Tensor]]] = [None] * len(self.h)
         steps = 0
+
         while batch.shape[0] > 0 and batch.shape[1] < self.n_ctx and steps < self.n_ctx:
             steps += 1
-            out, _ = self(batch)
+
+            if steps == 1:
+                input_ids = batch
+            else:
+                input_ids = batch[:, -1:].contiguous() 
+                
+            out, present = self(input_ids, past=past)
             logits = out[:, -1] / self.temperature
             probs = torch.softmax(logits, dim=-1)
             next_tokens = torch.multinomial(probs, num_samples=1)
 
-            batch = torch.concat(tensors=(batch, next_tokens), dim=1)
+            batch = torch.cat([batch, next_tokens], dim=1)
+            past = present
+
             ended = batch[:, -1] == self.end_token
             samples += [sample for sample in batch[ended]]
             batch = batch[~ended]
+            past = [p for i, p in enumerate(past) if not ended[i]] if batch.size(0) > 0 else []
+
         self.train()
         return samples
