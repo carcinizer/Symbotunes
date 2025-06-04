@@ -62,7 +62,7 @@ def load_params(params_file_path):
 def load_component(component, name, class_name):
     """Load and return component network from file."""
     imported = importlib.import_module(
-        '.'.join(('musegan.presets', component, name)))
+        '.'.join(('museGAN.presets', component, name)))
     return getattr(imported, class_name)
 
 # --- Logging utilities --------------------------------------------------------
@@ -77,7 +77,7 @@ def add_file_handler(logger, log_filepath, loglevel=FILE_LOGLEVEL,
 def setup_loggers(log_dir, loglevel=FILE_LOGLEVEL, log_format=FILE_LOG_FORMAT):
     """Setup the loggers with file handlers."""
     for name in logging.Logger.manager.loggerDict.keys():
-        if name.startswith('musegan'):
+        if name.startswith('museGAN'):
             add_file_handler(
                 logging.getLogger(name), os.path.join(log_dir, name + '.log'),
                 loglevel, log_format)
