@@ -4,10 +4,12 @@ from typing import Callable
 from mido import MidiFile, MidiTrack, MetaMessage
 import torch
 from tqdm import tqdm
+from multiprocessing import Pool
 
 from .base import BaseDataset
 from .utils.downloader import Downloader, DownloadError
 from .utils.file_utility import FileUtility
+from functools import partial
 
 
 class LakhMidiDataset(BaseDataset):
@@ -107,6 +109,7 @@ class LakhMidiDataset(BaseDataset):
         try:
             midi = MidiFile(midi_full_path)
         except Exception:  # Corrupted MIDI file
+            os.remove(midi_full_path)
             return
 
         channel_tracks = {}
@@ -163,19 +166,22 @@ class LakhMidiDataset(BaseDataset):
             tar_file.extractall(dest_path)
         os.remove(tarball_path)
 
-        print("Removing drums...")
-        file_list = []
-        for root, _, files in tqdm(os.walk(dataset_path)):
-            for file in files:
-                file_list.append((root, file))
-        print("Splitting tracks by channel...")
-        for root, file in tqdm(file_list):
-            self._split_tracks(root, file)
-        print("Removing empty bars...")
-        for root, _, files in tqdm(os.walk(dataset_path)):
-            for file in files:
-                full_path = os.path.join(root, file)
-                if "_" in file:
-                    self._remove_empty_bars_from_midi(full_path)
-                else:
-                    os.remove(full_path)
+        with Pool() as pool:
+            print("Removing drums...")
+            file_list = []
+            for root, _, files in tqdm(os.walk(dataset_path)):
+                for file in files:
+                    file_list.append((root, file))
+            print("Splitting tracks by channel...")
+            for root, file in tqdm(file_list):
+                pool.apply_async(partial(self._split_tracks, root, file))
+
+        with Pool() as pool:
+            print("Removing empty bars...")
+            for root, _, files in tqdm(os.walk(dataset_path)):
+                for file in files:
+                    full_path = os.path.join(root, file)
+                    if "_" in file:
+                        pool.apply_async(partial(self._remove_empty_bars_from_midi, full_path))
+                    else:
+                        os.remove(full_path)
