@@ -174,7 +174,7 @@ class LakhMidiDataset(BaseDataset):
                     file_list.append((root, file))
             print("Splitting tracks by channel...")
             for root, file in tqdm(file_list):
-                pool.apply_async(partial(self._split_tracks, root, file))
+                pool.apply_async(self._split_tracks, [root, file])
 
         with Pool() as pool:
             print("Removing empty bars...")
@@ -182,7 +182,7 @@ class LakhMidiDataset(BaseDataset):
                 for file in files:
                     full_path = os.path.join(root, file)
                     if "_" in file:
-                        pool.apply_async(partial(self._remove_empty_bars_from_midi, full_path))
+                        pool.apply_async(self._remove_empty_bars_from_midi, [full_path])
                     else:
                         os.remove(full_path)
 
@@ -191,7 +191,7 @@ class LakhMidiDataset(BaseDataset):
             for file in files:
                 full_path = os.path.join(root, file)
                 try:
-                    midi = MidiFile(full_path)
+                    MidiFile(full_path)
                 except Exception:  # Corrupted MIDI file
-                    #os.remove(midi_full_path)
+                    os.remove(full_path)
                     return
