@@ -109,7 +109,7 @@ class LakhMidiDataset(BaseDataset):
         try:
             midi = MidiFile(midi_full_path)
         except Exception:  # Corrupted MIDI file
-            os.remove(midi_full_path)
+            #os.remove(midi_full_path)
             return
 
         channel_tracks = {}
@@ -185,3 +185,13 @@ class LakhMidiDataset(BaseDataset):
                         pool.apply_async(partial(self._remove_empty_bars_from_midi, full_path))
                     else:
                         os.remove(full_path)
+
+        print("Removing broken files...")
+        for root, _, files in tqdm(os.walk(dataset_path)):
+            for file in files:
+                full_path = os.path.join(root, file)
+                try:
+                    midi = MidiFile(full_path)
+                except Exception:  # Corrupted MIDI file
+                    #os.remove(midi_full_path)
+                    return
