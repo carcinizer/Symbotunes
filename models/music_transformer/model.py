@@ -5,18 +5,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from ..base import BaseModel
 
-class Norm(nn.Module):
-    def __init__(self, n_state, epsilon=1e-5):
-        super(Norm, self).__init__()
-        self.epsilon = epsilon
-        self.g = nn.Parameter(torch.ones(n_state))
-        self.b = nn.Parameter(torch.zeros(n_state))
-
-    def forward(self, x):
-        u = x.mean(-1, keepdim=True)
-        s = (x - u).pow(2).mean(-1, keepdim=True)
-        x = (x - u) / torch.sqrt(s + self.epsilon)
-        return x * self.g + self.b
 
 class Conv1D(nn.Module):
     def __init__(self, nf, nx):
@@ -32,6 +20,15 @@ class Conv1D(nn.Module):
         x = torch.addmm(self.b, x.view(-1, x.size(-1)), self.w)
         x = x.view(*size_out)
         return x
+    
+class Norm(nn.Module):
+    def __init__(self, n_state, epsilon=1e-5):
+        super(Norm, self).__init__()
+        self.epsilon = epsilon
+        self.layer_norm = nn.LayerNorm(n_state, eps=epsilon)
+
+    def forward(self, x):
+        return self.layer_norm(x)
     
 class MLP(nn.Module):
     def __init__(self, n_state, n_embd):

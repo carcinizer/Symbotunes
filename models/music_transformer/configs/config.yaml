@@ -1,5 +1,8 @@
 model:
   model_type: music-transformer
+  output_transforms:
+    - folk_rnn_inv:
+    - abc_midi:
   params:
     n_vocab: 137 # wielkość słownika tokenów
     n_ctx: 1955 # maksymalna długość sekwencji (konkretne zależne od danych)
@@ -21,7 +24,7 @@ dataloaders:
     transforms:
       - folk_rnn:
 
-    batch_size: 16
+    batch_size: 2
     num_workers: 4
     collate_fn: "pad_collate_single_sequence"
 
@@ -35,7 +38,7 @@ dataloaders:
         transforms:
           - folk_rnn:
 
-        batch_size: 4
+        batch_size: 2
         num_workers: 4
         collate_fn: "pad_collate_single_sequence"
 
@@ -55,3 +58,4 @@ callbacks:
       prefix: "N-Step-Checkpoint"
       use_modelcheckpoint_filename: False
   - setup_callback:
+  - cuda_callback:

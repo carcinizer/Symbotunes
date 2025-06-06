@@ -24,7 +24,7 @@ dataloaders:
     transforms:
       - folk_rnn:
 
-    batch_size: 16
+    batch_size: 2
     num_workers: 4
     collate_fn: "pad_collate_single_sequence"
 
@@ -38,7 +38,7 @@ dataloaders:
         transforms:
           - folk_rnn:
 
-        batch_size: 4
+        batch_size: 2
         num_workers: 4
         collate_fn: "pad_collate_single_sequence"
 
@@ -61,4 +61,4 @@ callbacks:
       prefix: "N-Step-Checkpoint"
       use_modelcheckpoint_filename: False
   - setup_callback:
-  - cuda_callback:
+  # - cuda_callback:
