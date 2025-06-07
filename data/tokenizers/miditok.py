@@ -18,7 +18,7 @@ TOKENIZER_PARAMS = {
 }
 
 class MidiTokTokenizer(object):
-    def __init__(self, tokenizer_params: dict, max_tracks: int = 1) -> None:
+    def __init__(self, tokenizer_params: dict, max_tracks: int = 1, input_format: str = "midi") -> None:
         self.config = TokenizerConfig(**tokenizer_params)
         match tokenizer_params.get("tokenization", "remi"):
             case "remi":
@@ -35,10 +35,18 @@ class MidiTokTokenizer(object):
             case _:
                 raise Exception(f"Unknown tokenization '{tokenizer_params.get('tokenization')}'")
 
+        match input_format:
+            case "midi":
+                self.new_score = symusic.Score.from_midi
+            case "abc":
+                self.new_score = lambda x: symusic.Score.from_abc(str(x))
+            case _:
+                raise Exception(f"Unknown format '{input_format}'")
+
         self.max_tracks = max_tracks
 
     def __call__(self, data: bytes):
-        score = symusic.Score.from_midi(data)
+        score = self.new_score(data)
         tokenized_midi = self.tokenizer(score)[: self.max_tracks]
         return tokenized_midi[0] if len(tokenized_midi) == 1 else tokenized_midi
 
