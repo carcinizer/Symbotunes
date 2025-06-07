@@ -1,93 +1,42 @@
 model:
   model_type: performance-rnn
   output_transforms:
-    - tensor_to_toksequence:
-    - midi_tokenizer_inv:
-        tokenizer_params:
-          tokenization: midilike
-          pitch_range: [0, 127]
-          vocab_size: 413 
-          special_tokens: []
-          max_duration:  [1, 125, 125] # num_beats, num_frames, res_frames
-          note_on_count: 128
-          note_off_count: 128
-          num_velocities: 32
+    - folk_rnn_inv:
+    - abc_midi:
   params:
-    vocab_size: 413
+    vocab_size: 137
     num_layers: 3
     lstm_size: 512
-    dropout: 0.3
-    #embedding_size: null
-    lr: 0.001
-    #lr_decay: 0.97
-    #lr_decay_start: 20
+    dropout: 0.5
+    lr: 0.002
+    lr_decay: 0.97
+    lr_decay_start: 20
 
 dataloaders:
   validation:
-    name: "lakh"
+    name: "folk-rnn"
     root: "_data"
     split: "test"
     download: True
+    data_type: "tokenized_ABC"
     transforms:
-      - load_midi:
-      - force_tempo:
-          bpm: 60
-          tpq: 1000
-      - augment_timestretch:
-          magnitudes: [0.95, 0.975, 1, 1.025, 1.05] # [..., 0.9, 1.1]
-      - augment_transpose:
-          half_steps: [-4, 0, 4] # [-5,-4,-3,-2,-1,0,1,2,3,4,5,6]
-      - midi_tokenizer:
-          tokenizer_params:
-            tokenization: midilike
-            pitch_range: [0, 127]
-            vocab_size: 413 
-            special_tokens: []
-            max_duration:  [1, 125, 125] # num_beats, num_frames, res_frames
-            note_on_count: 128
-            note_off_count: 128
-            num_velocities: 32
-
-      - sample_subsequence:
-          subsequence_len: 256
-      - toksequence_to_tensor:
-
-    batch_size: 64
-    num_workers: 16
+      - folk_rnn:
+    batch_size: 32
+    num_workers: 4
     collate_fn: "pad_collate_single_sequence"
 
   train:
     - dataset:
-        name: "lakh"
+        name: "folk-rnn"
         root: "_data"
         split: "train"
-        download: True
+        download: False
+        data_type: "tokenized_ABC"
         transforms:
-          - load_midi:
-          - force_tempo:
-              bpm: 60
-              tpq: 1000
-          - augment_timestretch:
-              magnitudes: [0.95, 0.975, 1, 1.025, 1.05] # [..., 0.9, 1.1]
-          - augment_transpose:
-              half_steps: [-4, 0, 4] # [-5,-4,-3,-2,-1,0,1,2,3,4,5,6]
-          - midi_tokenizer:
-              tokenizer_params:
-                tokenization: midilike
-                pitch_range: [0, 127]
-                vocab_size: 413 
-                special_tokens: []
-                max_duration:  [1, 125, 125] # num_beats, num_frames, res_frames
-                note_on_count: 128
-                note_off_count: 128
-                num_velocities: 32
+          - folk_rnn:
 
-          - sample_subsequence:
-              subsequence_len: 256
-          - toksequence_to_tensor:
-        
-        batch_size: 64
-        num_workers: 16
+        batch_size: 32
+        num_workers: 4
         collate_fn: "pad_collate_single_sequence"
 
 lightning:
