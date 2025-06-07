@@ -23,14 +23,14 @@ model:
 
 dataloaders:
   validation:
-    name: "folk-rnn"
+    name: generic
+    dirname: "folk_rnn_midi"
     root: "_data"
     split: "test"
     download: True
     data_type: "tokenized_ABC"
     transforms:
-      - split_lines:
-      - abc_midi:
+      - load_midi:
       - midi_tokenizer:
           tokenizer_params:
             tokenization: midilike
@@ -41,20 +41,23 @@ dataloaders:
             note_on_count: 128
             note_off_count: 128
             num_velocities: 32
+      - sample_subsequence:
+          subsequence_len: 256
+      - toksequence_to_tensor:
+
     batch_size: 32
     num_workers: 4
     collate_fn: "pad_collate_single_sequence"
 
   train:
     - dataset:
-        name: "folk-rnn"
+        name: generic
+        dirname: "folk_rnn_midi"
         root: "_data"
         split: "train"
         download: False
-        data_type: "tokenized_ABC"
         transforms:
-          - split_lines:
-          - abc_midi:
+          - load_midi:
           - midi_tokenizer:
               tokenizer_params:
                 tokenization: midilike
@@ -65,6 +68,9 @@ dataloaders:
                 note_on_count: 128
                 note_off_count: 128
                 num_velocities: 32
+          - sample_subsequence:
+              subsequence_len: 256
+          - toksequence_to_tensor:
 
         batch_size: 32
         num_workers: 4
@@ -91,4 +97,4 @@ callbacks:
     #- frechet_music_distance:
     # every_n_epochs: 5
     # batch_size: 64
-    # dataset_path: "_data/train/folk_rnn/"
+    # dataset_path: "_data/train/folk_rnn_midi/"
