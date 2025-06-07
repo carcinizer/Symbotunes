@@ -1,7 +1,7 @@
 from typing import Callable
 from torchvision import transforms  # type: ignore[import]
 from .tokenize_transforms import TokenizeTransform, ReverseTokenizeTransform
-from ..converters import ABCTOMidiConverter
+from ..converters import ABCTOMidiConverter, SplitLines
 from .file_loaders import LoadMIDIData
 from ..tokenizers import MidiTokTokenizer, FolkTokenizer
 from .midi_transforms import SampleBars, TokSequenceToTensor, TensorToTokSequence, ForceTempo
@@ -49,5 +49,7 @@ def parse_transform(name: str, kwargs: dict) -> Callable:
             return RandomTranspose(**kwargs)
         case "force_tempo":
             return ForceTempo(**kwargs)
+        case "split_lines":
+            return SplitLines(**kwargs)
         case _:
             raise NotImplementedError("Unknown transform: " + name)
