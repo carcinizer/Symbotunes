@@ -14,6 +14,7 @@ class ABCTOMidiConverter:
         notes.insert(3, "\n")
         notes.insert(2, "\n")
         notes.insert(1, "\n")
+        notes.insert(1, "X: 1\n")
         return notes
 
     def _convert_abc_to_midi(self, notes_string: str) -> bytes:

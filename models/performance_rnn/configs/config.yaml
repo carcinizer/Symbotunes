@@ -29,8 +29,9 @@ dataloaders:
     download: True
     data_type: "tokenized_ABC"
     transforms:
+      - split_lines:
+      - abc_midi:
       - midi_tokenizer:
-          input_format: abc
           tokenizer_params:
             tokenization: midilike
             pitch_range: [0, 127]
@@ -52,8 +53,9 @@ dataloaders:
         download: False
         data_type: "tokenized_ABC"
         transforms:
+          - split_lines:
+          - abc_midi:
           - midi_tokenizer:
-              input_format: abc
               tokenizer_params:
                 tokenization: midilike
                 pitch_range: [0, 127]
