@@ -13,7 +13,7 @@ model:
           note_off_count: 128
           num_velocities: 32 
   params:
-    vocab_size: 137
+    vocab_size: 413
     num_layers: 3
     lstm_size: 512
     dropout: 0.5
@@ -94,7 +94,7 @@ callbacks:
       use_modelcheckpoint_filename: False
   - setup_callback:
   - cuda_callback:
-    #- frechet_music_distance:
-    # every_n_epochs: 5
-    # batch_size: 64
-    # dataset_path: "_data/train/folk_rnn_midi/"
+  - frechet_music_distance:
+      every_n_epochs: 2
+      batch_size: 32
+      dataset_path: "_data/train/folk_rnn_midi/"

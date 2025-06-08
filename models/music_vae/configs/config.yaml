@@ -54,8 +54,8 @@ dataloaders:
           subsequence_len: 256
       - toksequence_to_tensor:
     
-    batch_size: 128
-    num_workers: 16
+    batch_size: 32
+    num_workers: 4
     collate_fn: "pad_collate_single_sequence"
 
   train:
@@ -79,8 +79,8 @@ dataloaders:
               subsequence_len: 256
           - toksequence_to_tensor:
         
-        batch_size: 128
-        num_workers: 16
+        batch_size: 32
+        num_workers: 4
         collate_fn: "pad_collate_single_sequence"
 
 lightning:

@@ -17,9 +17,10 @@ class PerformanceRNN(BaseModel):
         lr: float = 0.001,
         lr_decay_start: int = 0,
         lr_decay: float = 1.0,
+        num_tokens_per_sample: int = 500,
         teacher_forcing_ratio: float = 1.0,
-        num_tokens_per_sample: int = 500, # TODO constant time samples
-        output_transforms = [],
+        start_token: int = 0,
+        end_token: int = 1,
         *args,
         **kwargs
     ) -> None:
@@ -34,7 +35,8 @@ class PerformanceRNN(BaseModel):
         self.lr_decay_start = lr_decay_start
         self.lr_decay = lr_decay
         self.num_tokens_per_sample = num_tokens_per_sample
-        self.output_transforms = output_transforms
+        self.start_token = start_token
+        self.end_token = end_token
 
         weights_emb = torch.eye(vocab_size, dtype=torch.float32)
         self.embedding = nn.Embedding.from_pretrained(weights_emb, freeze=True)
@@ -53,6 +55,8 @@ class PerformanceRNN(BaseModel):
 
     def forward(self, x: torch.Tensor, lengths: torch.Tensor) -> torch.Tensor:
         emb = self.embedding(x)  
+        assert torch.all(lengths > 0), f"Found zero-length sequence: {lengths}"
+        assert torch.all(lengths <= x.size(1)), f"Length(s) exceed sequence length {x.size(1)}: {lengths}"
         packed = pack_padded_sequence(emb, lengths.cpu(), batch_first=True, enforce_sorted=False)
         h0 = torch.zeros((self.num_layers, x.size(0), self.lstm_size), device=x.device)
         c0 = torch.zeros((self.num_layers, x.size(0), self.lstm_size), device=x.device)
@@ -147,7 +151,7 @@ class PerformanceRNN(BaseModel):
         self.eval()
         device = self.device
 
-        batch = torch.full((batch_size, 1), 0, device=device, dtype=torch.long)
+        batch = torch.full((batch_size, 1), self.start_token, device=device, dtype=torch.long)
         samples = []
 
         h = torch.zeros((self.num_layers, batch_size, self.lstm_size), device=device)
@@ -163,8 +167,7 @@ class PerformanceRNN(BaseModel):
             next_tokens = torch.multinomial(probs, num_samples=1) 
 
             batch = torch.cat([batch, next_tokens], dim=1)
-            # Disable end tokens - TODO TEMP hack
-            just_finished = (next_tokens.squeeze(1) == 99999999) & ~finished
+            just_finished = (next_tokens.squeeze(1) == self.end_token) & ~finished
             for idx in just_finished.nonzero(as_tuple=False).squeeze(1):
                 samples.append(batch[idx])
 
