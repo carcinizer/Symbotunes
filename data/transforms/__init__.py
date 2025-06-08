@@ -1,11 +1,12 @@
 from typing import Callable
 from torchvision import transforms  # type: ignore[import]
 from .tokenize_transforms import TokenizeTransform, ReverseTokenizeTransform
-from ..converters import ABCTOMidiConverter
-from .file_loaders import LoadMIDI
+from ..converters import ABCTOMidiConverter, SplitLines
+from .file_loaders import LoadMIDIData
 from ..tokenizers import MidiTokTokenizer, FolkTokenizer
-from .midi_transforms import SampleBars, TokSequenceToTensor, TensorToTokSequence
+from .midi_transforms import SampleBars, TokSequenceToTensor, TensorToTokSequence, ForceTempo
 from .sample_subsequence import SampleSubsequence
+from .augmentations import RandomTimestretch, RandomTranspose
 
 
 # fmt: off
@@ -27,7 +28,7 @@ def parse_transform(name: str, kwargs: dict) -> Callable:
         case "abc_midi":
             return ABCTOMidiConverter(**kwargs)
         case "load_midi":
-            return LoadMIDI(**kwargs)
+            return LoadMIDIData(**kwargs)
         case "midi_tokenizer":
             return TokenizeTransform(MidiTokTokenizer(**kwargs))
         case "midi_tokenizer_inv":
@@ -42,5 +43,13 @@ def parse_transform(name: str, kwargs: dict) -> Callable:
             return TensorToTokSequence(**kwargs)
         case "sample_subsequence":
             return SampleSubsequence(**kwargs)
+        case "augment_timestretch":
+            return RandomTimestretch(**kwargs)
+        case "augment_transpose":
+            return RandomTranspose(**kwargs)
+        case "force_tempo":
+            return ForceTempo(**kwargs)
+        case "split_lines":
+            return SplitLines(**kwargs)
         case _:
             raise NotImplementedError("Unknown transform: " + name)

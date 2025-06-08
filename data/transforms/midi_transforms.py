@@ -2,7 +2,7 @@
 from miditok import TokSequence
 from random import randint
 import torch
-
+import symusic
 
 
 class SampleBars(object):
@@ -41,3 +41,45 @@ class TensorToTokSequence(object):
     def __call__(self, tensor: torch.Tensor) -> TokSequence:
         return TokSequence(ids=tensor.tolist())
 
+<<<<<<< HEAD
+=======
+
+class ForceTempo:
+    def __init__(self, bpm: float, tpq: int):
+        self.bpm = bpm
+        self.tpq = tpq
+
+    def __call__(self, data: bytes) -> bytes:
+        score_sec = symusic.Score.from_midi(data, ttype="tick")
+        if len(score_sec.tracks) == 0:
+            return data # Empty file, TODO remove empty files in Lakh dataset
+
+        sec_notes = sorted(score_sec.tracks[0].notes.copy(), key=lambda x: x.start)
+
+        score_tick = symusic.Score(ttype="second")
+
+        score_tick.resample(tpq=self.tpq)
+        score_tick.tracks = [symusic.Track(program=0, ttype="second")]
+        score_tick.tempos = [symusic.Tempo(time=0, qpm=self.bpm, ttype="second")]
+        score_tick.time_signatures = [symusic.TimeSignature(time=0, numerator=4, denominator=4, ttype="second")]
+
+        notes = []
+        for old in sec_notes:
+            notes.append(symusic.Note(
+                time=self.convert_time(old.time),
+                duration=self.convert_time(old.duration),
+                velocity=old.velocity,
+                pitch=old.pitch,
+                ttype="second"
+            ))
+
+        score_tick.tracks[0].notes = notes
+        return score_tick.dumps_midi()
+
+    # Convert time from MIDI ticks to seconds
+    # TODO temporary, check if 
+    def convert_time(self, old: float) -> float:
+        return old / self.bpm / self.tpq
+
+
+>>>>>>> frechet-plus-performance

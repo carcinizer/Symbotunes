@@ -26,3 +26,4 @@ dependencies:
       - mido==1.3.3
       - miditok==3.0.4
       - wandb==0.18.6
+      - frechet-music-distance==1.0.0
