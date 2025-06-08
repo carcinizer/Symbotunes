@@ -41,8 +41,6 @@ class TensorToTokSequence(object):
     def __call__(self, tensor: torch.Tensor) -> TokSequence:
         return TokSequence(ids=tensor.tolist())
 
-<<<<<<< HEAD
-=======
 
 class ForceTempo:
     def __init__(self, bpm: float, tpq: int):
@@ -82,4 +80,3 @@ class ForceTempo:
         return old / self.bpm / self.tpq
 
 
->>>>>>> frechet-plus-performance
