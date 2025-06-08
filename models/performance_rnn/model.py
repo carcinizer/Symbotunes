@@ -55,6 +55,8 @@ class PerformanceRNN(BaseModel):
 
     def forward(self, x: torch.Tensor, lengths: torch.Tensor) -> torch.Tensor:
         emb = self.embedding(x)  
+        assert torch.all(lengths > 0), f"Found zero-length sequence: {lengths}"
+        assert torch.all(lengths <= x.size(1)), f"Length(s) exceed sequence length {x.size(1)}: {lengths}"
         packed = pack_padded_sequence(emb, lengths.cpu(), batch_first=True, enforce_sorted=False)
         h0 = torch.zeros((self.num_layers, x.size(0), self.lstm_size), device=x.device)
         c0 = torch.zeros((self.num_layers, x.size(0), self.lstm_size), device=x.device)
