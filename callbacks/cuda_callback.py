@@ -7,14 +7,22 @@ from pytorch_lightning.utilities import rank_zero_info
 class CUDACallback(Callback):
     # see https://github.com/SeanNaren/minGPT/blob/master/mingpt/callback.py
     def on_train_epoch_start(self, trainer, pl_module):
+        # Only reset stats if using a CUDA device
+        device = trainer.strategy.root_device
+        if not (isinstance(device, torch.device) and device.type == 'cuda'):
+            return
         # Reset the memory use counter
-        torch.cuda.reset_peak_memory_stats(trainer.strategy.root_device)
-        torch.cuda.synchronize(trainer.strategy.root_device)
+        torch.cuda.reset_peak_memory_stats(device)
+        torch.cuda.synchronize(device)
         self.start_time = time.time()
 
     def on_train_epoch_end(self, trainer, pl_module):
-        torch.cuda.synchronize(trainer.strategy.root_device)
-        max_memory = torch.cuda.max_memory_allocated(trainer.strategy.root_device) / 2**20
+        # Only report if using a CUDA device
+        device = trainer.strategy.root_device
+        if not (isinstance(device, torch.device) and device.type == 'cuda'):
+            return
+        torch.cuda.synchronize(device)
+        max_memory = torch.cuda.max_memory_allocated(device) / 2**20
         epoch_time = time.time() - self.start_time
 
         try:

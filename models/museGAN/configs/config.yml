@@ -19,7 +19,12 @@ dataloaders:
     split: "test"
     download: True
     transforms:
-      - folk_rnn:
+      - load_midi: {}
+      - midi_to_pianoroll:
+          n_time_steps: 96
+          lowest_pitch: 24
+          n_pitches: 84
+          n_tracks: 5
     batch_size: 64
     num_workers: 4
     collate_fn: "default_collate"
@@ -31,7 +36,12 @@ dataloaders:
         split: "train"
         download: True
         transforms:
-          - folk_rnn:
+          - load_midi: {}
+          - midi_to_pianoroll:
+              n_time_steps: 96
+              lowest_pitch: 24
+              n_pitches: 84
+              n_tracks: 5
         batch_size: 64
         num_workers: 4
         collate_fn: "default_collate"

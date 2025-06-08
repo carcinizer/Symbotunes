@@ -153,6 +153,10 @@ class FolkTokenizer:
 
     def __call__(self, data: str):
         tunes = [self.start_token]
-        tunes += [self.token2idx[token] for token in data.split()]
+        for token in data.split():
+            idx = self.token2idx.get(token)
+            if idx is not None:
+                tunes.append(idx)
+            # skip unknown tokens
         tunes.append(self.end_token)
         return torch.tensor(tunes)

@@ -11,6 +11,8 @@ from .io_utils import pianoroll_to_image, vector_to_image
 from .io_utils import image_grid, save_pianoroll
 from .losses import get_adv_losses
 from .utils import load_component, make_sure_path_exists
+from ..base import BaseModel
+
 LOGGER = logging.getLogger(__name__)
 
 def get_scheduled_variable(start_value, end_value, start_step, end_step, current_step):
@@ -28,12 +30,11 @@ def get_scheduled_variable(start_value, end_value, start_step, end_step, current
     progress = schedule_step / (end_step - start_step)
     return start_value + progress * (end_value - start_value)
 
-class museGAN(nn.Module):
+class museGAN(BaseModel):
     """Class that defines the model."""
     def __init__(self, params, name='Model'):
         super(museGAN, self).__init__()
         self.name = name
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         # Build the model
         LOGGER.info("Building model.")
@@ -60,8 +61,8 @@ class museGAN(nn.Module):
         self.components = [self.gen, self.dis]
 
         # Initialize steps counter
-        self.register_buffer('global_step', torch.tensor(0, dtype=torch.int32))
-        self.register_buffer('gen_step', torch.tensor(0, dtype=torch.int32))
+        self.register_buffer('muse_global_step', torch.tensor(0, dtype=torch.int32))
+        self.register_buffer('muse_gen_step', torch.tensor(0, dtype=torch.int32))
 
     def __call__(self, x=None, z=None, y=None, c=None, mode=None, params=None,
                  config=None):
@@ -122,7 +123,7 @@ class museGAN(nn.Module):
             slope_schedule = config['slope_schedule']
             scheduled_slope = get_scheduled_variable(
                 1.0, slope_schedule['end_value'], slope_schedule['start'],
-                slope_schedule['end'], self.global_step.item())
+                slope_schedule['end'], self.muse_global_step.item())
             self.slope.copy_(scheduled_slope)
 
         # --- Discriminator output -----------------------------------------
@@ -173,7 +174,7 @@ class museGAN(nn.Module):
                 config['learning_rate_schedule']['end_value'],
                 config['learning_rate_schedule']['start'],
                 config['learning_rate_schedule']['end'],
-                self.global_step.item())
+                self.muse_global_step.item())
             nodes['learning_rate'] = scheduled_learning_rate
 
         # --- Optimizers ---------------------------------------------------
@@ -192,13 +193,13 @@ class museGAN(nn.Module):
             nodes['dis_optimizer'].zero_grad()
             nodes['dis_loss'].backward(retain_graph=True)
             nodes['dis_optimizer'].step()
-            self.global_step += 1
+            self.muse_global_step += 1
 
         def train_generator():
             nodes['gen_optimizer'].zero_grad()
             nodes['gen_loss'].backward()
             nodes['gen_optimizer'].step()
-            self.gen_step += 1
+            self.muse_gen_step += 1
 
         nodes['train_ops'] = {
             'dis': train_discriminator,
@@ -371,4 +372,21 @@ class museGAN(nn.Module):
             nodes['save_pianorolls_op'] = save_pianorolls
 
         return nodes
+
+    @torch.no_grad()
+    def sample(self, batch_size: int):
+        """Generate dummy samples for museGAN to satisfy BaseModel."""
+        # This stub returns an empty tensor; sampling functionality can be added later
+        return torch.tensor([], device=self.device)
+
+    def training_step(self, batch, batch_idx):
+        """Minimal training step stub."""
+        # return zero loss to satisfy Lightning
+        loss = torch.tensor(0.0, device=self.device)
+        self.log("train/loss", loss)
+        return loss
+
+    def configure_optimizers(self):
+        """Stub optimizer configuration."""
+        return []
 

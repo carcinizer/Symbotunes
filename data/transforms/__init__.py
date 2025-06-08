@@ -4,6 +4,7 @@ from .folk_rnn import FolkTransform
 from .file_loaders import LoadMIDI
 from .midi_transforms import MidiTokenizer, MusicVAETokenizer, SampleBars, TokSequenceToTensor
 from .sample_subsequence import SampleSubsequence
+from .midi_to_pianoroll_transform import MidiToPianorollTransform
 
 
 # fmt: off
@@ -20,6 +21,8 @@ def parse_transform(name: str, kwargs: dict) -> Callable:
     match name:
         case "folk_rnn":
             return FolkTransform(**kwargs)
+        case "midi_to_pianoroll":
+            return MidiToPianorollTransform(**kwargs)
         case "load_midi":
             return LoadMIDI(**kwargs)
         case "midi_tokenizer":
