@@ -142,16 +142,25 @@ Implementation of this parser is in the `__init__.py` files: [model section pars
     * **folk-rnn** - folk music in ABC format, see https://arxiv.org/pdf/1604.08723.pdf
 * **dataset -> transforms**:
     * **folk_rnn** - tokenizer for ABC format, as described in https://arxiv.org/pdf/1604.08723.pdf, takes string as input, outputs tokenized sequence
-    * **midi_tokenizer** - generic miditok REMI midi file tokenizer, takes path to midi file as input, outputs miditok TokSequence
-    * **music_vae_tokenizer** - midi tokenizer for MusicVAE model, takes path to midi file as input, outputs miditok TokSequence
+    * **folk_rnn_inv** - inverse tokenizer for ABC format, takes tokenized sequence as input, outputs string
+    * **load_midi** - takes file path string and outputs MIDI file contents,
+    * **split_lines** - splits a text string into a list of line strings, for use with **abc_midi**,
+    * **midi_tokenizer** - generic miditok midi file tokenizer, takes MIDI (or ABC) file contents as input, outputs miditok TokSequence
+    * **midi_tokenizer_inv** - generic miditok midi file tokenizer, takes miditok TokSequence returns MIDI file contents,
+    * **abc_midi** - converts ABC file contents to MIDI,
+    * **music_vae_tokenizer** - generic midi inverse tokenizer for MusicVAE model, takes path to midi file as input, outputs miditok TokSequence
     * **sample_bars** - samples n random bars (continous, one bar after another) from the given track. takes TokSequence as input and outputs n sampled bars or the original sequence if the track has less than n bars (as TokSequence)
     * **toksequence_to_tensor** - transforms TokSequence to pytorch Tensor, takes TokSequence as input and outputs pytorch Tensor
-    * **sample_subsequence** - samples subsequence of given length from the given sequence (or return the sequence if the sequence is shorter than the expected subsequence)
+    * **sample_subsequence** - samples subsequence of given length from the given sequence (or return the sequence if the sequence is shorter than the expected subsequence),
+    * **force_tempo** - Forces MIDI file contents tempo to a fixed amount, used to make duration-based tokenizations on MidiTok,
+    * **augment_timestretch** - slows down/speeds up the entire MIDI, randomly taking amount from a list, takes and returns MIDI file contents,
+    * **augment_transpose** - randomly transposes the entire MIDI sample by one of predefined intervals, takes and returns MIDI file contents
 * **callbacks**:
     * **checkpoint_every_n_steps** - creates a model checkpoint every n training steps
     * **cuda_callback** - after the first epoch, computes memory used by the gpu during
     * **setup_callback** - sets up log directory for the experiment. Creates a directory for model checkpoints, creates a directory with the experiment configuration and saves the experiment configuration (the config file)
     * **model_checkpoint** - saves of the best model and the last model, including on keyboard interrupt
+    * **frechet_music_distance** - calculates and logs Frechet Music Distance every N epochs on a given dataset
 
 For other details, like model hyperparameters etc. please refer to the implementation.
 
