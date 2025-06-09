@@ -35,14 +35,17 @@ model:
 
 dataloaders:
   validation:
-    name: "lakh"
+    name: generic
+    dirname: "folk_rnn_midi"
     root: "_data"
     split: "test"
     download: True
+    data_type: "tokenized_ABC"
     transforms:
+      - load_midi:
       - midi_tokenizer:
           tokenizer_params:
-            tokenization: "midilike"
+            tokenization: midilike
             pitch_range: [0, 127]
             vocab_size: 130 # Total vocab size: 130 for pitches, note-off, rest + 512 for drum patterns
             max_bar_length: 16 # Each bar has 16 events (16th notes)
@@ -61,14 +64,17 @@ dataloaders:
 
   train:
     - dataset:
-        name: "lakh"
+        name: generic
+        dirname: "folk_rnn_midi"
         root: "_data"
-        split: "train"
+        split: "test"
         download: True
+        data_type: "tokenized_ABC"
         transforms:
+          - load_midi:
           - midi_tokenizer:
               tokenizer_params:
-                tokenization: "midilike"
+                tokenization: midilike
                 pitch_range: [0, 127]
                 vocab_size: 130 # Total vocab size: 130 for pitches, note-off, rest + 512 for drum patterns
                 max_bar_length: 16 # Each bar has 16 events (16th notes)
