@@ -1,6 +1,7 @@
 import pypianoroll
 import numpy as np
 import torch
+import pretty_midi
 
 class MidiToPianorollTransform:
     """
@@ -23,7 +24,9 @@ class MidiToPianorollTransform:
         if isinstance(midi_input, str):
             mt = pypianoroll.read(midi_input)
         else:
-            mt = midi_input
+            mt = midi_input        # Convert to Multitrack if pypianoroll.read returned a PrettyMIDI
+        if isinstance(mt, pretty_midi.PrettyMIDI):
+            mt = pypianoroll.from_pretty_midi(mt)
         # mt.pianorolls shape: (n_tracks, time, pitch)
         pr = mt.pianorolls
         # Transpose to (time, pitch, tracks)
