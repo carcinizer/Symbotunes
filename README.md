@@ -137,6 +137,8 @@ Implementation of this parser is in the `__init__.py` files: [model section pars
     * **folk-rnn** - see https://arxiv.org/pdf/1604.08723.pdf
     * **music-vae** - see https://arxiv.org/pdf/1803.05428.pdf
     * **gpt2** - see https://aclanthology.org/2020.nlp4musa-1.10.pdf
+    * **performance-rnn** - see https://arxiv.org/pdf/1808.03715
+    * **music-transformer** - see https://arxiv.org/pdf/1809.04281
 * **dataset -> name**:
     * **lakh** - Lakh for MusicVAE, as described in https://arxiv.org/pdf/1803.05428.pdf Contains midi files.
     * **folk-rnn** - folk music in ABC format, see https://arxiv.org/pdf/1604.08723.pdf
@@ -152,7 +154,7 @@ Implementation of this parser is in the `__init__.py` files: [model section pars
     * **sample_bars** - samples n random bars (continous, one bar after another) from the given track. takes TokSequence as input and outputs n sampled bars or the original sequence if the track has less than n bars (as TokSequence)
     * **toksequence_to_tensor** - transforms TokSequence to pytorch Tensor, takes TokSequence as input and outputs pytorch Tensor
     * **sample_subsequence** - samples subsequence of given length from the given sequence (or return the sequence if the sequence is shorter than the expected subsequence),
-    * **force_tempo** - Forces MIDI file contents tempo to a fixed amount, used to make duration-based tokenizations on MidiTok,
+    * **force_tempo** - forces MIDI file contents tempo/tpq to a fixed amount, used for duration-based tokenizations on MidiTok,
     * **augment_timestretch** - slows down/speeds up the entire MIDI, randomly taking amount from a list, takes and returns MIDI file contents,
     * **augment_transpose** - randomly transposes the entire MIDI sample by one of predefined intervals, takes and returns MIDI file contents
 * **callbacks**:
