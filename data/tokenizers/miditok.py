@@ -45,9 +45,9 @@ class MidiTokTokenizer(object):
         try:
             match self.input_format:
                 case "midi":
-                    score = symusic.Score.from_midi(str(data).encode())
+                    score = symusic.Score.from_midi(data)
                 case "abc":
-                    score = lambda x: symusic.Score.from_abc(str(data))
+                    score = symusic.Score.from_abc(str(data))
                 case _:
                     raise Exception(f"Unknown format '{self.input_format}'")
         except Exception as e:
