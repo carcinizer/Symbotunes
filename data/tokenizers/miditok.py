@@ -1,5 +1,5 @@
 
-from miditok import REMI, TSD, MIDILike, TokenizerConfig, TokSequence
+from miditok import REMI, TSD, MIDILike, TokenizerConfig, TokSequence, CPWord
 import symusic
 import torch
 
@@ -32,6 +32,8 @@ class MidiTokTokenizer(object):
                 self.tokenizer = TSD(self.config)
             case "midilike":
                 self.tokenizer = MIDILike(self.config)
+            case "cpword":
+                self.tokenizer = CPWord(self.config)
             case _:
                 raise Exception(f"Unknown tokenization '{tokenizer_params.get('tokenization')}'")
 

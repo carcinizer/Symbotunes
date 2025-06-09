@@ -25,18 +25,19 @@ class Encoder(nn.Module):
         self.linear_out = nn.Linear(in_features=hidden_size * 2, out_features=z_size * 2)
 
     def reparametrisation_trick(self, mu: torch.Tensor, log_var: torch.Tensor) -> torch.Tensor:
-        eps = torch.normal(mean=torch.zeros_like(mu), std=torch.ones_like(log_var))
-        sigma = torch.exp(log_var * 0.5)
+        eps = torch.randn_like(mu)
+        sigma = torch.exp(0.5 * log_var)
         return mu + eps * sigma
+
 
     def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         shape0 = 2 * self.num_layers
         h0 = torch.zeros((shape0, x.shape[0], self.hidden_size), device=x.device)
         c0 = torch.zeros((shape0, x.shape[0], self.hidden_size), device=x.device)
-        _, (out, _) = self.lstm(x, (h0, c0))  # we want the last state from both directions
+        _, (out, _) = self.lstm(x, (h0, c0))
         out = out.permute(1, 0, 2).reshape(
             out.shape[1], out.shape[0] * out.shape[2]
-        )  # reshape the forward and backward directions into one tensor: shape (2, batch, hidden) -> (batch, hidden * 2)
+        ) 
         out = self.linear_out(out)
         mu, log_var = torch.chunk(out, 2, dim=-1)
         log_var = nn.functional.softplus(log_var)
@@ -94,43 +95,48 @@ class Decoder(nn.Module):
         out = out.view(out.shape[0], self.conductor_num_layers, -1).permute(1, 0, 2)
         hidden_conductor = torch.chunk(out, chunks=2, dim=-1)
         hidden_conductor = [hidden_conductor[0].contiguous(), hidden_conductor[1].contiguous()]
-        conductor_in = torch.zeros(
-            batch_size, 1, self.conductor_in, device=z.device
-        )  # conductor produces embeddings by processing the encoder state z recursively - the input is always zero
-        notes = torch.zeros(batch_size, self.total_notes, self.num_tokens, device=z.device)
-        for subsequence in range(self.num_subsequences):
-            conductor_out, hidden_conductor = self.conductor(conductor_in, hidden_conductor)
-            conductor_out = conductor_out.squeeze(1)
-            decoder_in = self.linear_pre_decoder(conductor_out)
-            decoder_state = decoder_in.view(decoder_in.shape[0], self.lstm_num_layers, -1).permute(1, 0, 2)
-            decoder_h, decoder_c = torch.chunk(decoder_state, chunks=2, dim=-1)
-            decoder_h, decoder_c = decoder_h.contiguous(), decoder_c.contiguous()
 
-            if x is None:
-                note = torch.zeros(batch_size, self.num_tokens, device=z.device)
-                for i in range(self.n_per_subseq):
-                    lstm_in = torch.cat([decoder_in, note], dim=-1)
-                    lstm_in = lstm_in.unsqueeze(1)
+        conductor_in = torch.zeros(batch_size, self.num_subsequences, self.conductor_in, device=z.device)
+        conductor_out, _ = self.conductor(conductor_in, hidden_conductor)  # (B, S, H)
 
-                    out, (decoder_h, decoder_c) = self.decoder_lstm(lstm_in, (decoder_h, decoder_c))
-                    out = out.squeeze(1)
-                    out = self.linear_out(out)
-                    note = F.softmax(out, dim=1)
-                    notes[:, subsequence * self.n_per_subseq + i, :] = note
-            else:
-                decoder_in = decoder_in.unsqueeze(1).repeat(1, 16, 1)
+        decoder_in = self.linear_pre_decoder(conductor_out)  # (B, S, D)
+        decoder_state = decoder_in.view(batch_size, self.num_subsequences, self.lstm_num_layers, -1).permute(2, 0, 1, 3)
+        decoder_h, decoder_c = torch.chunk(decoder_state, 2, dim=-1)  # (L, B, S, H)
+        decoder_h = decoder_h.contiguous().view(self.lstm_num_layers, batch_size * self.num_subsequences, -1)
+        decoder_c = decoder_c.contiguous().view(self.lstm_num_layers, batch_size * self.num_subsequences, -1)
 
-                sequence_x = x[:, subsequence * self.n_per_subseq + 1 : (subsequence + 1) * self.n_per_subseq]
-                first_token = torch.zeros(sequence_x.shape[0], 1, sequence_x.shape[2], device=sequence_x.device)
-                sequence_x = torch.cat([first_token, sequence_x], dim=1)
+        note = torch.zeros(batch_size * self.num_subsequences, self.num_tokens, device=z.device)
+        
+        if x is None:
 
-                lstm_in = torch.cat([decoder_in, sequence_x], dim=-1)
+            outputs = []
+            for i in range(self.n_per_subseq):
+                lstm_in = torch.cat([
+                    decoder_in.view(batch_size * self.num_subsequences, -1),
+                    note
+                ], dim=-1).unsqueeze(1)
 
                 out, (decoder_h, decoder_c) = self.decoder_lstm(lstm_in, (decoder_h, decoder_c))
+                out = self.linear_out(out.squeeze(1))
+                note = F.softmax(out, dim=1)
+                outputs.append(note.view(batch_size, self.num_subsequences, self.num_tokens))
 
-                out = self.linear_out(out)
+            notes = torch.cat(outputs, dim=1)  # (B, total_notes, num_tokens)
+        else:
 
-                notes[:, subsequence * self.n_per_subseq : (subsequence + 1) * self.n_per_subseq] = out
+            x = x.view(batch_size, self.total_notes, self.num_tokens)
+            x = x.view(batch_size, self.num_subsequences, self.n_per_subseq, self.num_tokens)
+
+            first_token = torch.zeros(batch_size, self.num_subsequences, 1, self.num_tokens, device=x.device)
+            sequence_x = torch.cat([first_token, x[:, :, :-1, :]], dim=2)  # shift for teacher forcing
+
+            decoder_in_expanded = decoder_in.unsqueeze(2).expand(-1, -1, self.n_per_subseq, -1)
+            decoder_input = torch.cat([decoder_in_expanded, sequence_x], dim=-1)
+            decoder_input = decoder_input.view(batch_size * self.num_subsequences, self.n_per_subseq, -1)
+
+            out, _ = self.decoder_lstm(decoder_input, (decoder_h, decoder_c))
+            out = self.linear_out(out)
+            notes = out.view(batch_size, self.total_notes, self.num_tokens)
 
         return notes
 
@@ -162,7 +168,7 @@ class MusicVae(BaseModel):
 
     def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         mu, log_var = self.encoder(x)
-        sigma = torch.exp(log_var * 2)
+        sigma = torch.exp(log_var * 0.5)
         z = self.encoder.reparametrisation_trick(mu, log_var)
         if self.use_teacher_forcing:
             out = self.decoder(z, x)

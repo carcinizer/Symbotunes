@@ -59,3 +59,7 @@ callbacks:
       use_modelcheckpoint_filename: False
   - setup_callback:
   - cuda_callback:
+  - frechet_music_distance:
+      every_n_epochs: 2
+      batch_size: 32
+      dataset_path: "_data/train/folk_rnn_midi/"
