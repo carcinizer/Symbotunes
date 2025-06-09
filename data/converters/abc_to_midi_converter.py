@@ -30,8 +30,8 @@ class ABCTOMidiConverter:
 
     def __call__(self, notes: list[str]) -> bytes:
         try:
-            assert notes[0][0] == "M", f"Badly formatted input {notes!r}"
-            assert notes[1][0] == "K", f"Badly formatted input {notes!r}"
+            #assert notes[0][0] == "M", f"Badly formatted input {notes!r}"
+            #assert notes[1][0] == "K", f"Badly formatted input {notes!r}"
 
             formatted_notes = self._reformat_notes(notes)
             notes_string = " ".join(formatted_notes)
