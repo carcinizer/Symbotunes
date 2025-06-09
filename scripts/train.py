@@ -56,7 +56,7 @@ if __name__ == "__main__":
     if checkpoint_path is not None:
         model = model_type.load_from_checkpoint(checkpoint_path, **config.model.get("params", dict()))
     else:
-        model = model_type(config.model.get("params", dict()))
+        model = model_type(**config.model.get("params", dict()))
 
     transforms = OmegaConf.to_object(config.model["output_transforms"])
     assert isinstance(transforms, list)
