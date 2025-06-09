@@ -7,6 +7,7 @@ from ..tokenizers import MidiTokTokenizer, FolkTokenizer
 from .midi_transforms import SampleBars, TokSequenceToTensor, TensorToTokSequence, ForceTempo
 from .sample_subsequence import SampleSubsequence
 from .augmentations import RandomTimestretch, RandomTranspose
+from .midi_to_pianoroll_transform import MidiToPianorollTransform
 
 
 # fmt: off
@@ -27,6 +28,9 @@ def parse_transform(name: str, kwargs: dict) -> Callable:
             return ReverseTokenizeTransform(FolkTokenizer(**kwargs))
         case "abc_midi":
             return ABCTOMidiConverter(**kwargs)
+            return FolkTransform(**kwargs)
+        case "midi_to_pianoroll":
+            return MidiToPianorollTransform(**kwargs)
         case "load_midi":
             return LoadMIDIData(**kwargs)
         case "midi_tokenizer":

@@ -2,6 +2,7 @@ from typing import Type
 from .base import BaseModel
 from .folk_rnn import FolkRNN
 from .music_vae import MusicVae
+from .museGAN import museGAN
 from .gpt import GPT2
 from .performance_rnn import PerformanceRNN
 from .music_transformer import MusicTransformer
@@ -19,5 +20,7 @@ def get_model(name: str) -> Type[BaseModel]:
             return GPT2
         case "music-transformer":
             return MusicTransformer
+        case "museGAN":
+            return museGAN
         case _:
             raise NotImplementedError(f"Model {name} is not available")

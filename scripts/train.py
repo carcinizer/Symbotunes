@@ -10,6 +10,7 @@ from data import get_dataloaders
 from data.transforms import get_transform
 from models import get_model
 from callbacks import get_callbacks
+from data.transforms import MidiToPianorollTransform
 
 
 if __name__ == "__main__":
@@ -37,13 +38,25 @@ if __name__ == "__main__":
 
     dl_config_orig = config.pop("dataloaders")  # type: ignore[arg-type]
     dl_config = OmegaConf.to_container(dl_config_orig, resolve=True)
+    # Insert midi to pianoroll conversion for museGAN
+    if config.model.model_type == 'museGAN':
+        dl_config['train'][0]['dataset']['transforms'] = [
+            {'load_midi': {}},
+            {'midi_to_pianoroll': {
+                'n_time_steps': config.model.params.data_shape[1],
+                'lowest_pitch': config.sampling.midi.lowest_pitch,
+                'n_pitches': config.model.params.data_shape[2],
+                'n_tracks': config.model.params.data_shape[3]
+            }}
+        ]
+        dl_config['validation']['transforms'] = dl_config['train'][0]['dataset']['transforms']
     train_dls, test_dl = get_dataloaders(dl_config)  # type: ignore[arg-type]
 
     model_type = get_model(config.model.get("model_type"))
     if checkpoint_path is not None:
         model = model_type.load_from_checkpoint(checkpoint_path, **config.model.get("params", dict()))
     else:
-        model = model_type(**config.model.get("params", dict()))
+        model = model_type(config.model.get("params", dict()))
 
     transforms = OmegaConf.to_object(config.model["output_transforms"])
     assert isinstance(transforms, list)

@@ -11,6 +11,8 @@ def get_dataset(name: str, config: dict) -> BaseDataset:
             return FolkRnnDataset(**config)
         case "lakh":
             return LakhMidiDataset(**config)
+        case "museGAN":
+            return LakhMidiDataset(**config)
         case "generic":
             return GenericDataset(**config)
         case _:
