@@ -37,18 +37,19 @@ class MidiTokTokenizer(object):
             case _:
                 raise Exception(f"Unknown tokenization '{tokenizer_params.get('tokenization')}'")
 
-        match input_format:
-            case "midi":
-                self.new_score = symusic.Score.from_midi
-            case "abc":
-                self.new_score = lambda x: symusic.Score.from_abc(str(x))
-            case _:
-                raise Exception(f"Unknown format '{input_format}'")
+        self.input_format = input_format
 
         self.max_tracks = max_tracks
 
     def __call__(self, data: bytes):
-        score = self.new_score(data)
+        match self.input_format:
+            case "midi":
+                score = symusic.Score.from_midi(str(data).encode())
+            case "abc":
+                score = lambda x: symusic.Score.from_abc(str(data))
+            case _:
+                raise Exception(f"Unknown format '{self.input_format}'")
+
         tokenized_midi = self.tokenizer(score)[: self.max_tracks]
         return tokenized_midi[0] if len(tokenized_midi) == 1 else tokenized_midi
 
