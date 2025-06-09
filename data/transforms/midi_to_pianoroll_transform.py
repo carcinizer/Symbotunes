@@ -18,19 +18,32 @@ class MidiToPianorollTransform:
         self.lowest_pitch = lowest_pitch
         self.n_pitches = n_pitches
         self.n_tracks = n_tracks
-
+        
     def __call__(self, midi_input):
         # Load multitrack pianoroll
         if isinstance(midi_input, str):
             mt = pypianoroll.read(midi_input)
         else:
-            mt = midi_input        # Convert to Multitrack if pypianoroll.read returned a PrettyMIDI
+            mt = midi_input
+        # Convert to Multitrack if pypianoroll.read returned a PrettyMIDI
         if isinstance(mt, pretty_midi.PrettyMIDI):
             mt = pypianoroll.from_pretty_midi(mt)
-        # mt.pianorolls shape: (n_tracks, time, pitch)
-        pr = mt.pianorolls
-        # Transpose to (time, pitch, tracks)
-        pr = np.transpose(pr, (1, 2, 0))
+        
+        # Extract pianorolls from tracks
+        # Each track has a pianoroll attribute
+        pianorolls = []
+        for track in mt.tracks:
+            pianorolls.append(track.pianoroll)
+        
+        # Stack pianorolls if we have any
+        if pianorolls:
+            # Stack along the last dimension
+            pr = np.stack(pianorolls, axis=2)
+            # Transpose if needed - pianoroll is already (time, pitch), we just stacked tracks
+            # so no need for transpose
+        else:
+            # Create an empty pianoroll with the right shape
+            pr = np.zeros((0, 128, 0), dtype=np.bool_)
         # Trim or pad time dimension
         T = self.n_time_steps
         if pr.shape[0] >= T:
