@@ -14,6 +14,7 @@ class ABCTOMidiConverter:
         notes.insert(3, "\n")
         notes.insert(2, "\n")
         notes.insert(1, "\n")
+        notes.insert(2, "X: 1\n")
         return notes
 
     def _convert_abc_to_midi(self, notes_string: str) -> bytes:
@@ -27,10 +28,19 @@ class ABCTOMidiConverter:
         midi.close()
         return out
 
-    def __call__(self, notes: list[str]):
-        assert notes[0][0] == "M"
-        assert notes[1][0] == "K"
+    def __call__(self, notes: list[str]) -> bytes:
+        try:
+            #assert notes[0][0] == "M", f"Badly formatted input {notes!r}"
+            #assert notes[1][0] == "K", f"Badly formatted input {notes!r}"
 
-        formatted_notes = self._reformat_notes(notes)
-        notes_string = " ".join(formatted_notes)
-        return self._convert_abc_to_midi(notes_string)
+            formatted_notes = self._reformat_notes(notes)
+            notes_string = " ".join(formatted_notes)
+            return self._convert_abc_to_midi(notes_string)
+        except Exception as e:
+            raise Exception(f"Got exception {e}; while converting file: {notes!r}")
+
+
+
+class SplitLines:
+    def __call__(self, notes) -> list[str]:
+        return str(notes).splitlines()

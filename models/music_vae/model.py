@@ -34,10 +34,10 @@ class Encoder(nn.Module):
         shape0 = 2 * self.num_layers
         h0 = torch.zeros((shape0, x.shape[0], self.hidden_size), device=x.device)
         c0 = torch.zeros((shape0, x.shape[0], self.hidden_size), device=x.device)
-        _, (out, _) = self.lstm(x, (h0, c0))  # we want the last state from both directions
+        _, (out, _) = self.lstm(x, (h0, c0))
         out = out.permute(1, 0, 2).reshape(
             out.shape[1], out.shape[0] * out.shape[2]
-        )  # reshape the forward and backward directions into one tensor: shape (2, batch, hidden) -> (batch, hidden * 2)
+        ) 
         out = self.linear_out(out)
         mu, log_var = torch.chunk(out, 2, dim=-1)
         log_var = nn.functional.softplus(log_var)

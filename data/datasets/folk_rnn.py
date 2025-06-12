@@ -2,6 +2,7 @@ import os
 import requests
 from typing import Callable
 import numpy as np
+from pathlib import Path
 
 from .base import BaseDataset
 
@@ -29,8 +30,13 @@ class FolkRnnDataset(BaseDataset):
         #     self.file_list = glob.glob(os.path.join(os.path.join(self.root, "session_test"),"*.mid"))
         if data_type == "tokenized_ABC":
             self.data_file = os.path.join(self.root, "train", "data_v2.txt")
-            with open(self.data_file, "r", encoding="utf-8") as file:
-                full_data = np.array(file.read().split("\n\n"))
+            try:
+                with open(self.data_file, "r", encoding="utf-8") as file:
+                    full_data = np.array(file.read().split("\n\n"))
+            except Exception:
+                self.download()
+                with open(self.data_file, "r", encoding="utf-8") as file:
+                    full_data = np.array(file.read().split("\n\n"))
 
             self.data = self.split_data(full_data)
 
@@ -59,5 +65,14 @@ class FolkRnnDataset(BaseDataset):
                 os.makedirs(dest_path, exist_ok=True)
                 with open(file_path, "wb") as file:
                     file.write(response.content)
+
+                split_path = Path(dest_path) / "folk_rnn"
+                os.makedirs(split_path, exist_ok=True)
+                
+                # Individual files for Frechet Music Distance library
+                for c, i in enumerate(response.content.split(b'\n\n')):
+                    with open(split_path / f"{c}.abc", "wb") as file:
+                        file.write(i)
+
             else:
                 raise requests.HTTPError("Unable to download the dataset")

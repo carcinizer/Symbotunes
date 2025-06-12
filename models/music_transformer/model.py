@@ -6,6 +6,33 @@ import torch.nn.functional as F
 from ..base import BaseModel
 from typing import Optional, Tuple
 
+<<<<<<< HEAD
+class Norm(nn.Module):
+    def __init__(self, n_state, epsilon=1e-5):
+        super(Norm, self).__init__()
+        self.epsilon = epsilon
+        self.layer_norm = nn.LayerNorm(n_state, eps=epsilon)
+
+    def forward(self, x):
+        return self.layer_norm(x)
+=======
+
+class Conv1D(nn.Module):
+    def __init__(self, nf, nx):
+        super(Conv1D, self).__init__()
+        self.nf = nf
+        w = torch.empty(nx, nf)
+        nn.init.normal_(w, std=0.02)
+        self.w = nn.Parameter(w)
+        self.b = nn.Parameter(torch.zeros(nf))
+
+    def forward(self, x):
+        size_out = x.size()[:-1] + (self.nf,)
+        x = torch.addmm(self.b, x.view(-1, x.size(-1)), self.w)
+        x = x.view(*size_out)
+        return x
+>>>>>>> 703c86d9a593fc51e613c17383ac3fe47d5c9b45
+    
 class Norm(nn.Module):
     def __init__(self, n_state, epsilon=1e-5):
         super(Norm, self).__init__()

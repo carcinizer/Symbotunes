@@ -1,5 +1,5 @@
 
-from miditok import REMI, TSD, MIDILike, TokenizerConfig, TokSequence
+from miditok import REMI, TSD, MIDILike, TokenizerConfig, TokSequence, CPWord
 import symusic
 import torch
 
@@ -18,7 +18,7 @@ TOKENIZER_PARAMS = {
 }
 
 class MidiTokTokenizer(object):
-    def __init__(self, tokenizer_params: dict, max_tracks: int = 1) -> None:
+    def __init__(self, tokenizer_params: dict, max_tracks: int = 1, input_format: str = "midi") -> None:
         self.config = TokenizerConfig(**tokenizer_params)
         match tokenizer_params.get("tokenization", "remi"):
             case "remi":
@@ -32,13 +32,28 @@ class MidiTokTokenizer(object):
                 self.tokenizer = TSD(self.config)
             case "midilike":
                 self.tokenizer = MIDILike(self.config)
+            case "cpword":
+                self.tokenizer = CPWord(self.config)
             case _:
                 raise Exception(f"Unknown tokenization '{tokenizer_params.get('tokenization')}'")
-                
+
+        self.input_format = input_format
+
         self.max_tracks = max_tracks
 
-    def __call__(self, data: str):
-        tokenized_midi = self.tokenizer(data)[: self.max_tracks]
+    def __call__(self, data: bytes):
+        try:
+            match self.input_format:
+                case "midi":
+                    score = symusic.Score.from_midi(data)
+                case "abc":
+                    score = symusic.Score.from_abc(str(data))
+                case _:
+                    raise Exception(f"Unknown format '{self.input_format}'")
+        except Exception as e:
+            raise Exception(f"Failed to tokenize: {e}, data: {data}")
+
+        tokenized_midi = self.tokenizer(score)[: self.max_tracks]
         return tokenized_midi[0] if len(tokenized_midi) == 1 else tokenized_midi
 
     def inverse_transform(self, data: TokSequence) -> bytes:
